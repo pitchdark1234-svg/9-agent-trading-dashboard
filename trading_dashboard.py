@@ -1,4 +1,4 @@
-""
+"""
 9+1 Agent AI Trading Command Center
 Gold | Crude Oil | Natural Gas | Bitcoin
 Live dashboard with Order Block Scanner, Yahoo-style charts, conditional signals & sound alerts
@@ -24,91 +24,80 @@ st.set_page_config(
 )
 
 # ====================== CUSTOM CSS ======================
-st.markdown("""
+_CUSTOM_CSS = """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    .stApp {
-        background: linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
-        font-family: 'Inter', sans-serif;
-    }
-    
-    .main-header {
-        background: linear-gradient(90deg, #1e3a5f 0%, #0f172a 100%);
-        padding: 1.2rem 2rem;
-        border-radius: 12px;
-        border: 1px solid #1e40af;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 20px rgba(30, 64, 175, 0.3);
-    }
-    
-    .agent-card {
-        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 1rem;
-        margin-bottom: 0.8rem;
-        transition: all 0.3s ease;
-    }
-    
-    .agent-card:hover {
-        border-color: #3b82f6;
-        box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
-    }
-    
-    .agent-title {
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: #60a5fa;
-        margin-bottom: 0.4rem;
-    }
-    
-    .decision-box {
-        background: linear-gradient(145deg, #064e3b 0%, #022c22 100%);
-        border: 2px solid #10b981;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-top: 1rem;
-    }
-    
-    .decision-box-wait {
-        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-        border: 2px solid #64748b;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-top: 1rem;
-    }
-    
-    .news-alert {
-        background: linear-gradient(145deg, #7f1d1d 0%, #450a0a 100%);
-        border: 1px solid #ef4444;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 0.8rem;
-        animation: pulse 2s infinite;
-    }
-    
-    .ob-card {
-        background: linear-gradient(145deg, #312e81 0%, #1e1b4b 100%);
-        border: 1px solid #6366f1;
-        border-radius: 12px;
-        padding: 1rem;
-        margin-bottom: 0.8rem;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.85; }
-    }
-    
-    .status-online { color: #10b981; font-weight: 600; }
-    .status-pending { color: #f59e0b; }
-    
-    h1, h2, h3 { color: #f1f5f9 !important; }
-    .stMetric label { color: #94a3b8 !important; }
-    .stMetric value { color: #f1f5f9 !important; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+.stApp {
+    background: linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
+    font-family: 'Inter', sans-serif;
+}
+.main-header {
+    background: linear-gradient(90deg, #1e3a5f 0%, #0f172a 100%);
+    padding: 1.2rem 2rem;
+    border-radius: 12px;
+    border: 1px solid #1e40af;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 20px rgba(30, 64, 175, 0.3);
+}
+.agent-card {
+    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.8rem;
+    transition: all 0.3s ease;
+}
+.agent-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+}
+.agent-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #60a5fa;
+    margin-bottom: 0.4rem;
+}
+.decision-box {
+    background: linear-gradient(145deg, #064e3b 0%, #022c22 100%);
+    border: 2px solid #10b981;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+.decision-box-wait {
+    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+    border: 2px solid #64748b;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+}
+.news-alert {
+    background: linear-gradient(145deg, #7f1d1d 0%, #450a0a 100%);
+    border: 1px solid #ef4444;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.8rem;
+    animation: pulse 2s infinite;
+}
+.ob-card {
+    background: linear-gradient(145deg, #312e81 0%, #1e1b4b 100%);
+    border: 1px solid #6366f1;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.8rem;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.85; }
+}
+.status-online { color: #10b981; font-weight: 600; }
+.status-pending { color: #f59e0b; }
+h1, h2, h3 { color: #f1f5f9 !important; }
+.stMetric label { color: #94a3b8 !important; }
+.stMetric value { color: #f1f5f9 !important; }
 </style>
-""", unsafe_allow_html=True)
+"""
+st.markdown(_CUSTOM_CSS, unsafe_allow_html=True)
 
 # ====================== REAL MARKET DATA ======================
 SYMBOLS = {
