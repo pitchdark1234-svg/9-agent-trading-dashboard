@@ -1,1411 +1,631 @@
 """
-Bloomberg-style Multi-Agent Trading Terminal
-Gold | Crude Oil | Natural Gas | Bitcoin
-RSI · MACD · Volume Profile · EMA · Order Block · Institutional Quant
+Deep Profile Terminal — Deepcharts-style Volume Profile
+POC · Value Area · HVN · LVN · Absorption · VWAP
+Gold | Crude | NatGas | Bitcoin
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import time
-import random
 import yfinance as yf
-import streamlit.components.v1 as components
 
-# ====================== PAGE CONFIG ======================
 st.set_page_config(
-    page_title="BBG-Style Trading Terminal",
+    page_title="Deep Profile Terminal",
     page_icon="⬛",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ====================== BLOOMBERG TERMINAL CSS ======================
-_CUSTOM_CSS = """
+# ====================== DEEPCHARTS-STYLE CSS ======================
+st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
-
-/* === CORE BLOOMBERG LOOK === */
-.stApp {
-    background: #000000 !important;
-    font-family: 'Roboto Mono', 'Courier New', monospace !important;
-    color: #e0e0e0 !important;
-}
-.main .block-container {
-    padding-top: 0.8rem !important;
-    padding-bottom: 1rem !important;
-    max-width: 100% !important;
-}
-section[data-testid="stSidebar"] {
-    background: #0a0a0a !important;
-    border-right: 1px solid #333 !important;
-}
-section[data-testid="stSidebar"] * {
-    font-family: 'Roboto Mono', monospace !important;
-    color: #ccc !important;
-}
-
-/* Headers */
-h1, h2, h3, h4 {
-    font-family: 'Roboto Mono', monospace !important;
-    color: #ff6600 !important;
-    letter-spacing: 0.5px !important;
-    font-weight: 600 !important;
-}
-.stMarkdown p, .stCaption {
-    font-family: 'Roboto Mono', monospace !important;
-}
-
-/* Metrics — Bloomberg quote style */
-div[data-testid="stMetric"] {
-    background: #0d0d0d !important;
-    border: 1px solid #222 !important;
-    padding: 8px 12px !important;
-    border-radius: 0 !important;
-}
-div[data-testid="stMetric"] label {
-    color: #888 !important;
-    font-size: 0.7rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.5px !important;
-}
-div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-    color: #ffffff !important;
-    font-family: 'Roboto Mono', monospace !important;
-    font-weight: 600 !important;
-    font-size: 1.25rem !important;
-}
-div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
-    font-family: 'Roboto Mono', monospace !important;
-    font-size: 0.85rem !important;
-}
-
-/* Buttons */
-.stButton > button {
-    background: #1a1a1a !important;
-    color: #ff6600 !important;
-    border: 1px solid #ff6600 !important;
-    border-radius: 0 !important;
-    font-family: 'Roboto Mono', monospace !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 1px !important;
-}
-.stButton > button:hover {
-    background: #ff6600 !important;
-    color: #000 !important;
-}
-
-/* Inputs */
-.stSelectbox, .stNumberInput, .stSlider, .stToggle {
-    font-family: 'Roboto Mono', monospace !important;
-}
-
-/* === BLOOMBERG COMPONENTS === */
-.bbg-header {
-    background: #000;
-    border-bottom: 2px solid #ff6600;
-    padding: 6px 14px;
-    margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.bbg-header-title {
-    color: #ff6600;
-    font-size: 1.1rem;
-    font-weight: 700;
-    letter-spacing: 2px;
-    font-family: 'Roboto Mono', monospace;
-}
-.bbg-header-sub {
-    color: #666;
-    font-size: 0.7rem;
-    letter-spacing: 1px;
-}
-.bbg-ticker-bar {
-    background: #0a0a0a;
-    border: 1px solid #222;
-    padding: 6px 12px;
-    margin-bottom: 8px;
-    font-family: 'Roboto Mono', monospace;
-    font-size: 0.8rem;
-    color: #aaa;
-    white-space: nowrap;
-    overflow-x: auto;
-}
-.bbg-panel {
-    background: #0a0a0a;
-    border: 1px solid #222;
-    padding: 10px 12px;
-    margin-bottom: 8px;
-}
-.bbg-panel-title {
-    color: #ff6600;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    border-bottom: 1px solid #222;
-    padding-bottom: 4px;
-    margin-bottom: 8px;
-    font-family: 'Roboto Mono', monospace;
-}
-.agent-card {
-    background: #0a0a0a;
-    border: 1px solid #1a1a1a;
-    border-left: 3px solid #333;
-    border-radius: 0;
-    padding: 8px 10px;
-    margin-bottom: 6px;
-    font-family: 'Roboto Mono', monospace;
-    font-size: 0.8rem;
-}
-.agent-card:hover {
-    border-left-color: #ff6600;
-    background: #0f0f0f;
-}
-.agent-title {
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: #ff6600;
-    margin-bottom: 4px;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-}
-.decision-box {
-    background: #001a0d;
-    border: 1px solid #00aa44;
-    border-left: 4px solid #00cc55;
-    border-radius: 0;
-    padding: 12px 14px;
-    margin-top: 6px;
-    font-family: 'Roboto Mono', monospace;
-}
-.decision-box-wait {
-    background: #0a0a0a;
-    border: 1px solid #333;
-    border-left: 4px solid #666;
-    border-radius: 0;
-    padding: 12px 14px;
-    margin-top: 6px;
-    font-family: 'Roboto Mono', monospace;
-}
-.news-alert {
-    background: #1a0505;
-    border: 1px solid #440000;
-    border-left: 3px solid #cc0000;
-    border-radius: 0;
-    padding: 6px 10px;
-    margin-bottom: 4px;
-    font-size: 0.75rem;
-    font-family: 'Roboto Mono', monospace;
-}
-.ob-card {
-    background: #0a0a12;
-    border: 1px solid #1a1a2e;
-    border-left: 3px solid #ff6600;
-    border-radius: 0;
-    padding: 8px 10px;
-    margin-bottom: 6px;
-    font-family: 'Roboto Mono', monospace;
-}
-.status-online { color: #00cc55; font-weight: 600; }
-.status-pending { color: #ff9900; }
-.pos { color: #00cc55 !important; }
-.neg { color: #ff3333 !important; }
-.amber { color: #ff6600 !important; }
-
-/* Hide Streamlit branding for cleaner terminal look */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap');
+.stApp { background: #0b0e11 !important; font-family: 'Roboto Mono', monospace !important; color: #d1d4dc !important; }
+.main .block-container { padding-top: 0.5rem !important; max-width: 100% !important; }
+section[data-testid="stSidebar"] { background: #131722 !important; border-right: 1px solid #2a2e39 !important; }
+h1, h2, h3 { color: #f0b90b !important; font-family: 'Roboto Mono', monospace !important; font-size: 0.95rem !important; }
+div[data-testid="stMetric"] { background: #131722 !important; border: 1px solid #2a2e39 !important; border-radius: 2px !important; padding: 6px 10px !important; }
+div[data-testid="stMetric"] label { color: #787b86 !important; font-size: 0.62rem !important; text-transform: uppercase !important; letter-spacing: 0.5px !important; }
+div[data-testid="stMetric"] [data-testid="stMetricValue"] { color: #d1d4dc !important; font-family: 'Roboto Mono', monospace !important; font-size: 1.05rem !important; }
+.stButton > button { background: #1e222d !important; color: #f0b90b !important; border: 1px solid #f0b90b !important; border-radius: 2px !important; font-family: 'Roboto Mono', monospace !important; font-size: 0.75rem !important; text-transform: uppercase !important; }
+.stButton > button:hover { background: #f0b90b !important; color: #0b0e11 !important; }
+.hdr { background: #131722; border-bottom: 1px solid #f0b90b; padding: 8px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.hdr-title { color: #f0b90b; font-weight: 700; letter-spacing: 2px; font-size: 0.95rem; }
+.hdr-sub { color: #787b86; font-size: 0.7rem; }
+.ticker { background: #131722; border: 1px solid #2a2e39; padding: 6px 12px; margin-bottom: 8px; font-size: 0.78rem; color: #787b86; }
+.panel { background: #131722; border: 1px solid #2a2e39; padding: 10px 12px; margin-bottom: 8px; border-radius: 2px; }
+.panel-t { color: #f0b90b; font-size: 0.68rem; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; border-bottom: 1px solid #2a2e39; padding-bottom: 4px; margin-bottom: 8px; }
+.row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #1a1e28; font-size: 0.76rem; }
+.poc { color: #e91e8c; font-weight: 700; }
+.vah { color: #26a69a; }
+.val { color: #ef5350; }
+.hvn { color: #42a5f5; }
+.lvn { color: #ab47bc; }
+.bull { color: #26a69a; }
+.bear { color: #ef5350; }
+.amber { color: #f0b90b; }
+.abs-buy { color: #26a69a; }
+.abs-sell { color: #ef5350; }
+#MainMenu, footer, header { visibility: hidden; }
 </style>
-"""
-st.markdown(_CUSTOM_CSS, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-# ====================== REAL MARKET DATA ======================
-SYMBOLS = {
-    "Gold (XAUUSD)": "GC=F",
-    "Crude Oil (WTI)": "CL=F",
-    "Natural Gas": "NG=F",
-    "Bitcoin (BTC)": "BTC-USD"
+# ====================== SYMBOLS ======================
+INSTRUMENTS = {
+    "Gold (XAUUSD)": {"tv": "OANDA:XAUUSD", "yf": "GC=F", "dec": 2},
+    "Crude Oil (WTI)": {"tv": "NYMEX:CL1!", "yf": "CL=F", "dec": 2},
+    "Natural Gas": {"tv": "NYMEX:NG1!", "yf": "NG=F", "dec": 3},
+    "Bitcoin (BTC)": {"tv": "BINANCE:BTCUSDT", "yf": "BTC-USD", "dec": 2},
 }
 
-SYMBOL_KEYS = {
-    "Gold (XAUUSD)": "gold",
-    "Crude Oil (WTI)": "crude",
-    "Natural Gas": "natgas",
-    "Bitcoin (BTC)": "bitcoin"
-}
-
-@st.cache_data(ttl=45)
-def fetch_real_prices():
-    prices = {}
-    changes = {}
-    try:
-        for name, symbol in SYMBOLS.items():
-            key = SYMBOL_KEYS[name]
-            ticker = yf.Ticker(symbol)
-            try:
-                info = ticker.fast_info
-                price = info.get("lastPrice") or info.get("regularMarketPrice")
-                prev = info.get("previousClose")
-            except Exception:
-                hist = ticker.history(period="5d", interval="1d")
-                if not hist.empty:
-                    price = float(hist["Close"].iloc[-1])
-                    prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else price
-                else:
-                    price, prev = None, None
-            if price is not None:
-                decimals = 3 if key == "natgas" else 2
-                prices[key] = round(float(price), decimals)
-                changes[key] = round(float(price) - float(prev), decimals) if prev else 0.0
-            else:
-                prices[key] = None
-                changes[key] = 0.0
-    except Exception as e:
-        return None, None
-    return prices, changes
-
+# ====================== DATA ======================
 @st.cache_data(ttl=60)
-def generate_ohlc_history(symbol, periods=120):
-    """Fetch real OHLC + Volume for advanced chart"""
+def fetch_ohlc(symbol, period="5d", interval="15m"):
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="5d", interval="15m")
-        if hist.empty or len(hist) < 20:
-            hist = ticker.history(period="1mo", interval="1h")
-        if not hist.empty:
-            df = hist.tail(periods).reset_index()
-            time_col = "Datetime" if "Datetime" in df.columns else df.columns[0]
-            df = df.rename(columns={time_col: "time"})
-            df = df[["time", "Open", "High", "Low", "Close", "Volume"]].copy()
-            df.columns = ["time", "open", "high", "low", "close", "volume"]
-            return df
+        t = yf.Ticker(symbol)
+        df = t.history(period=period, interval=interval)
+        if df is None or df.empty:
+            df = t.history(period="1mo", interval="1h")
+        if df is None or df.empty:
+            return None
+        df = df.reset_index()
+        c0 = df.columns[0]
+        df = df.rename(columns={c0: "time", "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+        df = df[["time", "open", "high", "low", "close", "volume"]].dropna()
+        return df.tail(250).reset_index(drop=True)
     except Exception:
-        pass
-    # Fallback simulated OHLC
-    base = {"GC=F": 2650, "CL=F": 73, "NG=F": 2.9, "BTC-USD": 64000}.get(symbol, 100)
-    np.random.seed(hash(symbol) % 2**32)
-    returns = np.random.normal(0, 0.0012, periods)
-    closes = base * np.cumprod(1 + returns)
-    opens = np.roll(closes, 1)
-    opens[0] = base
-    highs = np.maximum(opens, closes) * (1 + np.abs(np.random.normal(0, 0.0008, periods)))
-    lows = np.minimum(opens, closes) * (1 - np.abs(np.random.normal(0, 0.0008, periods)))
-    volumes = np.random.randint(800, 4500, periods)
-    times = [datetime.now() - timedelta(minutes=15 * (periods - i)) for i in range(periods)]
-    return pd.DataFrame({
-        "time": times, "open": opens, "high": highs, "low": lows, "close": closes, "volume": volumes
-    })
-
-def get_live_prices():
-    real, changes = fetch_real_prices()
-    if real and all(v is not None for v in real.values()):
-        return real, changes, True
-    base = {
-        "gold": 2651.20 + random.uniform(-3, 3),
-        "crude": 72.85 + random.uniform(-0.4, 0.4),
-        "natgas": 2.87 + random.uniform(-0.05, 0.05),
-        "bitcoin": 64000 + random.uniform(-800, 800)
-    }
-    prices = {k: round(v, 2 if k != "natgas" else 3) for k, v in base.items()}
-    changes = {k: round(random.uniform(-2, 2) if k != "bitcoin" else random.uniform(-400, 400), 2) for k in prices}
-    return prices, changes, False
-
-def detect_order_blocks(df, lookback=40):
-    """
-    Simple Order Block detection:
-    - Bullish OB: last down candle before a strong upward impulse
-    - Bearish OB: last up candle before a strong downward impulse
-    Returns list of dicts with type, top, bottom, mid, strength
-    """
-    if df is None or len(df) < lookback + 5:
-        return []
-    
-    recent = df.tail(lookback).copy().reset_index(drop=True)
-    obs = []
-    
-    # Calculate impulse strength (body + range)
-    recent["body"] = abs(recent["close"] - recent["open"])
-    recent["range"] = recent["high"] - recent["low"]
-    avg_body = recent["body"].mean()
-    
-    for i in range(3, len(recent) - 4):
-        # Bullish Order Block: bearish candle followed by strong bullish move
-        if (recent.loc[i, "close"] < recent.loc[i, "open"] and
-            recent.loc[i+1, "close"] > recent.loc[i+1, "open"] and
-            recent.loc[i+2, "close"] > recent.loc[i+1, "close"] and
-            recent.loc[i+1, "body"] > avg_body * 1.4):
-            
-            top = max(recent.loc[i, "open"], recent.loc[i, "close"])
-            bottom = min(recent.loc[i, "open"], recent.loc[i, "close"])
-            # Prefer the body as OB zone
-            mid = (top + bottom) / 2
-            strength = min(1.0, recent.loc[i+1, "body"] / (avg_body + 1e-9))
-            obs.append({
-                "type": "Bullish OB",
-                "top": round(top, 3),
-                "bottom": round(bottom, 3),
-                "mid": round(mid, 3),
-                "strength": round(strength, 2),
-                "time": recent.loc[i, "time"]
-            })
-        
-        # Bearish Order Block
-        if (recent.loc[i, "close"] > recent.loc[i, "open"] and
-            recent.loc[i+1, "close"] < recent.loc[i+1, "open"] and
-            recent.loc[i+2, "close"] < recent.loc[i+1, "close"] and
-            recent.loc[i+1, "body"] > avg_body * 1.4):
-            
-            top = max(recent.loc[i, "open"], recent.loc[i, "close"])
-            bottom = min(recent.loc[i, "open"], recent.loc[i, "close"])
-            mid = (top + bottom) / 2
-            strength = min(1.0, recent.loc[i+1, "body"] / (avg_body + 1e-9))
-            obs.append({
-                "type": "Bearish OB",
-                "top": round(top, 3),
-                "bottom": round(bottom, 3),
-                "mid": round(mid, 3),
-                "strength": round(strength, 2),
-                "time": recent.loc[i, "time"]
-            })
-    
-    # Keep only the strongest / most recent few
-    obs = sorted(obs, key=lambda x: x["strength"], reverse=True)[:4]
-    return obs
-
-# ====================== REAL TECHNICAL INDICATORS ======================
-def compute_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
-    rs = avg_gain / (avg_loss + 1e-10)
-    return 100 - (100 / (1 + rs))
-
-def compute_macd(series, fast=12, slow=26, signal=9):
-    ema_fast = series.ewm(span=fast, adjust=False).mean()
-    ema_slow = series.ewm(span=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
-
-def compute_volume_profile(df, bins=24):
-    """Approximate Volume Profile: find Point of Control (highest volume price area)"""
-    if df is None or len(df) < 10 or df["volume"].sum() == 0:
-        return {"poc": None, "vah": None, "val": None, "bias": "Neutral"}
-    price_min = df["low"].min()
-    price_max = df["high"].max()
-    if price_max <= price_min:
-        return {"poc": float(df["close"].iloc[-1]), "vah": None, "val": None, "bias": "Neutral"}
-    bin_edges = np.linspace(price_min, price_max, bins + 1)
-    vol_at_price = np.zeros(bins)
-    for _, row in df.iterrows():
-        mid = (row["high"] + row["low"]) / 2
-        idx = np.searchsorted(bin_edges, mid, side="right") - 1
-        idx = max(0, min(bins - 1, idx))
-        vol_at_price[idx] += row["volume"]
-    poc_idx = int(np.argmax(vol_at_price))
-    poc = (bin_edges[poc_idx] + bin_edges[poc_idx + 1]) / 2
-    # Value Area (approx 70% volume)
-    total = vol_at_price.sum()
-    sorted_idx = np.argsort(vol_at_price)[::-1]
-    cum = 0
-    va_bins = []
-    for i in sorted_idx:
-        cum += vol_at_price[i]
-        va_bins.append(i)
-        if cum >= total * 0.70:
-            break
-    va_low = bin_edges[min(va_bins)]
-    va_high = bin_edges[max(va_bins) + 1]
-    last = float(df["close"].iloc[-1])
-    if last > poc * 1.002:
-        bias = "Bullish (above POC)"
-    elif last < poc * 0.998:
-        bias = "Bearish (below POC)"
-    else:
-        bias = "Neutral (at POC)"
-    return {
-        "poc": round(poc, 4),
-        "vah": round(va_high, 4),
-        "val": round(va_low, 4),
-        "bias": bias
-    }
-
-def compute_atr(df, period=14):
-    high, low, close = df["high"], df["low"], df["close"]
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        high - low,
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=1).max(axis=1)
-    return tr.ewm(span=period, adjust=False).mean()
-
-def analyze_market(df, order_blocks, current_price):
-    """
-    Powerful multi-indicator engine.
-    Returns structured signals from RSI, MACD, Volume Profile, EMA structure, ATR, Order Blocks.
-    Only produces a trade bias when several independent signals agree.
-    """
-    if df is None or len(df) < 30:
         return None
 
-    close = df["close"]
-    last = float(close.iloc[-1])
+@st.cache_data(ttl=45)
+def fetch_last(symbol):
+    try:
+        t = yf.Ticker(symbol)
+        info = t.fast_info
+        px = info.get("lastPrice") or info.get("regularMarketPrice")
+        prev = info.get("previousClose")
+        if px is None:
+            h = t.history(period="5d", interval="1d")
+            if not h.empty:
+                px = float(h["Close"].iloc[-1])
+                prev = float(h["Close"].iloc[-2]) if len(h) > 1 else px
+        return (float(px) if px else None), (float(prev) if prev else None)
+    except Exception:
+        return None, None
 
-    # --- RSI ---
-    rsi = compute_rsi(close, 14)
-    rsi_val = float(rsi.iloc[-1])
-    rsi_prev = float(rsi.iloc[-2]) if len(rsi) > 1 else rsi_val
-    if rsi_val < 30:
-        rsi_signal = "BUY"
-        rsi_note = f"RSI oversold ({rsi_val:.1f})"
-    elif rsi_val > 70:
-        rsi_signal = "SELL"
-        rsi_note = f"RSI overbought ({rsi_val:.1f})"
-    elif rsi_val > rsi_prev and rsi_val > 50:
-        rsi_signal = "BUY"
-        rsi_note = f"RSI rising in bull zone ({rsi_val:.1f})"
-    elif rsi_val < rsi_prev and rsi_val < 50:
-        rsi_signal = "SELL"
-        rsi_note = f"RSI falling in bear zone ({rsi_val:.1f})"
-    else:
-        rsi_signal = "NEUTRAL"
-        rsi_note = f"RSI neutral ({rsi_val:.1f})"
+# ====================== VOLUME PROFILE ENGINE ======================
+def build_volume_profile(df, bins=48, va_pct=0.70):
+    """
+    Deepcharts-style Volume Profile:
+    - POC, VAH, VAL
+    - Volume histogram at each price bin
+    - Approximate delta from candle direction
+    """
+    if df is None or len(df) < 10 or df["volume"].sum() <= 0:
+        return None
 
-    # --- MACD ---
-    macd_line, signal_line, hist = compute_macd(close)
-    macd_val = float(macd_line.iloc[-1])
-    sig_val = float(signal_line.iloc[-1])
-    hist_val = float(hist.iloc[-1])
-    hist_prev = float(hist.iloc[-2]) if len(hist) > 1 else hist_val
-    if macd_val > sig_val and hist_val > 0 and hist_val > hist_prev:
-        macd_signal = "BUY"
-        macd_note = "MACD bullish crossover / rising histogram"
-    elif macd_val < sig_val and hist_val < 0 and hist_val < hist_prev:
-        macd_signal = "SELL"
-        macd_note = "MACD bearish crossover / falling histogram"
-    elif hist_val > 0:
-        macd_signal = "BUY"
-        macd_note = "MACD histogram positive"
-    elif hist_val < 0:
-        macd_signal = "SELL"
-        macd_note = "MACD histogram negative"
-    else:
-        macd_signal = "NEUTRAL"
-        macd_note = "MACD flat"
+    price_min = float(df["low"].min())
+    price_max = float(df["high"].max())
+    if price_max <= price_min:
+        return None
 
-    # --- EMAs (trend structure) ---
-    ema20 = close.ewm(span=20, adjust=False).mean()
-    ema50 = close.ewm(span=50, adjust=False).mean()
-    e20 = float(ema20.iloc[-1])
-    e50 = float(ema50.iloc[-1])
-    if last > e20 > e50:
-        ema_signal = "BUY"
-        ema_note = "Price > EMA20 > EMA50 (strong uptrend)"
-    elif last < e20 < e50:
-        ema_signal = "SELL"
-        ema_note = "Price < EMA20 < EMA50 (strong downtrend)"
-    elif last > e20:
-        ema_signal = "BUY"
-        ema_note = "Price above EMA20 (short-term bullish)"
-    elif last < e20:
-        ema_signal = "SELL"
-        ema_note = "Price below EMA20 (short-term bearish)"
-    else:
-        ema_signal = "NEUTRAL"
-        ema_note = "Price consolidating around EMAs"
+    edges = np.linspace(price_min, price_max, bins + 1)
+    centers = (edges[:-1] + edges[1:]) / 2
+    vol = np.zeros(bins)
+    buy_vol = np.zeros(bins)
+    sell_vol = np.zeros(bins)
 
-    # --- Volume Profile ---
-    vp = compute_volume_profile(df.tail(80))
-    if "Bullish" in vp["bias"]:
-        vp_signal = "BUY"
-    elif "Bearish" in vp["bias"]:
-        vp_signal = "SELL"
-    else:
-        vp_signal = "NEUTRAL"
-    vp_note = f"POC {vp['poc']} | {vp['bias']}"
-
-    # --- ATR (for risk sizing) ---
-    atr = compute_atr(df, 14)
-    atr_val = float(atr.iloc[-1]) if not atr.empty else last * 0.01
-
-    # --- Order Block alignment ---
-    nearest_ob = None
-    ob_aligned = False
-    ob_signal_txt = "No high-quality Order Block near price"
-    ob_bias = "NEUTRAL"
-    if order_blocks:
-        for ob in order_blocks:
-            dist = abs(ob["mid"] - current_price)
-            if nearest_ob is None or dist < abs(nearest_ob["mid"] - current_price):
-                nearest_ob = ob
-        if nearest_ob:
-            zone_dist = abs(nearest_ob["mid"] - current_price) / max(current_price, 1e-9)
-            if zone_dist < 0.006:  # within ~0.6%
-                ob_aligned = True
-                if nearest_ob["type"] == "Bullish OB":
-                    ob_bias = "BUY"
-                    ob_signal_txt = f"Price at Bullish OB {nearest_ob['bottom']:.2f}-{nearest_ob['top']:.2f}"
-                else:
-                    ob_bias = "SELL"
-                    ob_signal_txt = f"Price at Bearish OB {nearest_ob['bottom']:.2f}-{nearest_ob['top']:.2f}"
+    for _, row in df.iterrows():
+        # distribute volume across the bar's range (approximation)
+        lo, hi = float(row["low"]), float(row["high"])
+        v = float(row["volume"])
+        if hi <= lo:
+            idx = np.clip(np.searchsorted(edges, (lo + hi) / 2, side="right") - 1, 0, bins - 1)
+            vol[idx] += v
+            if row["close"] >= row["open"]:
+                buy_vol[idx] += v
             else:
-                ob_signal_txt = f"Nearest {nearest_ob['type']} @ {nearest_ob['mid']:.2f} (watching)"
+                sell_vol[idx] += v
+            continue
+        # proportional allocation across bins the bar spans
+        i0 = np.clip(np.searchsorted(edges, lo, side="right") - 1, 0, bins - 1)
+        i1 = np.clip(np.searchsorted(edges, hi, side="right") - 1, 0, bins - 1)
+        n = max(1, i1 - i0 + 1)
+        share = v / n
+        is_buy = row["close"] >= row["open"]
+        for i in range(i0, i1 + 1):
+            vol[i] += share
+            if is_buy:
+                buy_vol[i] += share
+            else:
+                sell_vol[i] += share
 
-    # --- Collect votes ---
-    votes = {
-        "RSI": rsi_signal,
-        "MACD": macd_signal,
-        "EMA": ema_signal,
-        "VolumeProfile": vp_signal,
-        "OrderBlock": ob_bias if ob_aligned else "NEUTRAL"
-    }
-    buy_votes = sum(1 for v in votes.values() if v == "BUY")
-    sell_votes = sum(1 for v in votes.values() if v == "SELL")
+    total = vol.sum()
+    if total <= 0:
+        return None
 
-    # ============================================================
-    # INSTITUTIONAL QUANT MODEL (JPM / RiskMetrics inspired)
-    # Multi-factor score + volatility regime + risk budgeting
-    # ============================================================
-    # Factor 1: Momentum (MACD + EMA structure)
-    mom_score = 0.0
-    if macd_signal == "BUY":
-        mom_score += 0.5
-    elif macd_signal == "SELL":
-        mom_score -= 0.5
-    if ema_signal == "BUY":
-        mom_score += 0.5
-    elif ema_signal == "SELL":
-        mom_score -= 0.5
+    poc_idx = int(np.argmax(vol))
+    poc = float(centers[poc_idx])
 
-    # Factor 2: Mean-reversion (RSI extremes)
-    mr_score = 0.0
-    if rsi_val < 30:
-        mr_score += 0.8   # oversold → buy pressure
-    elif rsi_val > 70:
-        mr_score -= 0.8
-    elif rsi_val < 40:
-        mr_score += 0.3
-    elif rsi_val > 60:
-        mr_score -= 0.3
+    # Value Area: expand from POC until va_pct of volume
+    target = total * va_pct
+    left = right = poc_idx
+    covered = vol[poc_idx]
+    while covered < target and (left > 0 or right < bins - 1):
+        left_vol = vol[left - 1] if left > 0 else -1
+        right_vol = vol[right + 1] if right < bins - 1 else -1
+        if right_vol >= left_vol and right < bins - 1:
+            right += 1
+            covered += vol[right]
+        elif left > 0:
+            left -= 1
+            covered += vol[left]
+        else:
+            right += 1
+            covered += vol[right]
 
-    # Factor 3: Volume / flow (Volume Profile)
-    flow_score = 0.0
-    if vp_signal == "BUY":
-        flow_score += 0.6
-    elif vp_signal == "SELL":
-        flow_score -= 0.6
-
-    # Factor 4: Structural (Order Block)
-    structure_score = 0.0
-    if ob_aligned and ob_bias == "BUY":
-        structure_score += 0.9
-    elif ob_aligned and ob_bias == "SELL":
-        structure_score -= 0.9
-
-    # Composite institutional score (-3 to +3 range roughly)
-    quant_score = mom_score + mr_score + flow_score + structure_score
-
-    # Volatility regime (RiskMetrics-style)
-    # Compare recent ATR to longer-term ATR
-    atr_series = compute_atr(df, 14)
-    atr_long = float(atr_series.tail(50).mean()) if len(atr_series) >= 50 else atr_val
-    vol_ratio = atr_val / (atr_long + 1e-9)
-    if vol_ratio > 1.35:
-        vol_regime = "HIGH"
-        vol_note = f"Elevated volatility (ATR ratio {vol_ratio:.2f}) — reduce size"
-    elif vol_ratio < 0.75:
-        vol_regime = "LOW"
-        vol_note = f"Compressed volatility (ATR ratio {vol_ratio:.2f}) — breakout watch"
-    else:
-        vol_regime = "NORMAL"
-        vol_note = f"Normal volatility regime (ATR ratio {vol_ratio:.2f})"
-
-    # Trend regime via ADX-like simplicity (EMA separation)
-    ema_sep = abs(e20 - e50) / (last + 1e-9)
-    if ema_sep > 0.008 and (last > e20 > e50 or last < e20 < e50):
-        trend_regime = "TRENDING"
-    else:
-        trend_regime = "RANGING"
-
-    # Final institutional bias — stricter than simple vote
-    # Require quant_score magnitude + vote agreement
-    if quant_score >= 1.4 and buy_votes >= 3:
-        final_bias = "BUY"
-    elif quant_score <= -1.4 and sell_votes >= 3:
-        final_bias = "SELL"
-    else:
-        final_bias = "NEUTRAL"
-
-    # Conflict with Order Block kills the trade
-    if ob_aligned and ob_bias != "NEUTRAL" and final_bias != "NEUTRAL" and final_bias != ob_bias:
-        final_bias = "NEUTRAL"
-
-    # In HIGH vol regime, demand even stronger score
-    if vol_regime == "HIGH" and abs(quant_score) < 1.8:
-        final_bias = "NEUTRAL"
-
-    quant_signal = "BUY" if quant_score > 0.6 else ("SELL" if quant_score < -0.6 else "NEUTRAL")
-    quant_note = (
-        f"Score {quant_score:+.2f} | Mom {mom_score:+.1f} | MR {mr_score:+.1f} | "
-        f"Flow {flow_score:+.1f} | Struct {structure_score:+.1f} | {vol_regime} vol | {trend_regime}"
-    )
+    vah = float(edges[right + 1])
+    val = float(edges[left])
+    delta = buy_vol - sell_vol
 
     return {
-        "rsi": {"value": round(rsi_val, 1), "signal": rsi_signal, "note": rsi_note},
-        "macd": {"value": round(macd_val, 4), "signal": macd_signal, "note": macd_note, "hist": round(hist_val, 4)},
-        "ema": {"ema20": round(e20, 4), "ema50": round(e50, 4), "signal": ema_signal, "note": ema_note},
-        "volume_profile": {**vp, "signal": vp_signal, "note": vp_note},
-        "atr": round(atr_val, 4),
-        "orderblock": {
-            "aligned": ob_aligned,
-            "nearest": nearest_ob,
-            "signal": ob_signal_txt,
-            "bias": ob_bias,
-            "confidence": nearest_ob["strength"] if nearest_ob else 0.0
-        },
-        "votes": votes,
-        "buy_votes": buy_votes,
-        "sell_votes": sell_votes,
-        "final_bias": final_bias,
-        # Institutional Quant Model (JPM-style)
-        "quant": {
-            "score": round(quant_score, 2),
-            "signal": quant_signal,
-            "note": quant_note,
-            "vol_regime": vol_regime,
-            "vol_note": vol_note,
-            "trend_regime": trend_regime,
-            "mom_score": round(mom_score, 2),
-            "mr_score": round(mr_score, 2),
-            "flow_score": round(flow_score, 2),
-            "structure_score": round(structure_score, 2),
-            "vol_ratio": round(vol_ratio, 2)
-        }
+        "centers": centers,
+        "edges": edges,
+        "volume": vol,
+        "buy_vol": buy_vol,
+        "sell_vol": sell_vol,
+        "delta": delta,
+        "poc": poc,
+        "poc_idx": poc_idx,
+        "vah": vah,
+        "val": val,
+        "total": total,
+        "price_min": price_min,
+        "price_max": price_max,
     }
 
-def get_agent_outputs(prices, selected_key, order_blocks, current_price, ohlc_df=None):
+def detect_hvn_lvn(profile, sensitivity=0.55):
     """
-    Powerful multi-agent system driven by REAL indicators:
-    RSI • MACD • Volume Profile • EMA Structure • Order Block • ATR Risk
-    Trade signal only when ≥3 indicators + Order Block agree.
+    Peaks = HVN, Valleys = LVN (Deepcharts Peak/Valley style).
+    sensitivity: higher = fewer nodes (stricter).
     """
-    analysis = analyze_market(ohlc_df, order_blocks, current_price) if ohlc_df is not None else None
+    if profile is None:
+        return [], []
+    vol = profile["volume"]
+    centers = profile["centers"]
+    if vol.max() <= 0:
+        return [], []
 
-    instrument_names = {
-        "gold": "XAUUSD (Gold)",
-        "crude": "CL (Crude Oil)",
-        "natgas": "NG (Natural Gas)",
-        "bitcoin": "BTC-USD (Bitcoin)"
-    }
-    display_name = instrument_names.get(selected_key, selected_key.upper())
+    mean_v = vol.mean()
+    std_v = vol.std() + 1e-12
+    # HVN: local peaks above mean + sensitivity * std
+    thr_h = mean_v + sensitivity * std_v
+    thr_l = mean_v - sensitivity * std_v * 0.5
+    hvn, lvn = [], []
 
-    # Adaptive SL/TP using ATR when available
-    atr = analysis["atr"] if analysis else (current_price * 0.008)
-    if selected_key == "gold":
-        size = "0.40 lots"
-    elif selected_key == "crude":
-        size = "1.00 lots"
-    elif selected_key == "natgas":
-        size = "2.00 lots"
-    else:
-        size = "0.05 BTC"
+    for i in range(1, len(vol) - 1):
+        if vol[i] >= vol[i - 1] and vol[i] >= vol[i + 1] and vol[i] >= thr_h:
+            hvn.append({
+                "price": float(centers[i]),
+                "volume": float(vol[i]),
+                "pct": float(vol[i] / profile["total"] * 100),
+            })
+        if vol[i] <= vol[i - 1] and vol[i] <= vol[i + 1] and vol[i] <= max(thr_l, 0):
+            lvn.append({
+                "price": float(centers[i]),
+                "volume": float(vol[i]),
+                "pct": float(vol[i] / profile["total"] * 100),
+            })
 
-    decimals = 3 if selected_key == "natgas" else 2
+    # keep strongest HVNs / thinnest LVNs
+    hvn = sorted(hvn, key=lambda x: x["volume"], reverse=True)[:8]
+    lvn = sorted(lvn, key=lambda x: x["volume"])[:6]
+    return hvn, lvn
 
-    # Default empty decision
-    decision = {
-        "name": "9️⃣ Final Decision Agent",
-        "status": "WAITING",
-        "instrument": display_name,
-        "side": "—",
-        "entry": "—",
-        "stop_loss": "—",
-        "take_profit": "—",
-        "size": "—",
-        "confidence": 0.0,
-        "reasoning": "Waiting for high-confluence setup (RSI + MACD + Volume Profile + EMA + Order Block).",
-        "aligned_agents": [],
-        "has_trade": False
-    }
+def detect_absorption(df, min_vol_mult=1.8, max_body_pct=0.35):
+    """
+    Approximate Absorption (Deepcharts style without full tick data):
+    - High volume relative to average
+    - Small body vs range (price absorbed / rejected)
+    - Close rejects the extreme (wick absorption)
+    Bid absorption ≈ sellers absorb buys → long upper wick / close weak after high vol
+    Ask absorption ≈ buyers absorb sells → long lower wick / close strong after high vol
+    """
+    if df is None or len(df) < 20:
+        return []
+    d = df.copy().reset_index(drop=True)
+    d["range"] = (d["high"] - d["low"]).replace(0, np.nan)
+    d["body"] = (d["close"] - d["open"]).abs()
+    d["body_pct"] = d["body"] / d["range"]
+    d["upper_wick"] = d["high"] - d[["open", "close"]].max(axis=1)
+    d["lower_wick"] = d[["open", "close"]].min(axis=1) - d["low"]
+    avg_vol = d["volume"].rolling(20, min_periods=5).mean()
 
-    if analysis and analysis["final_bias"] in ("BUY", "SELL"):
-        side = analysis["final_bias"]
-        ob_ok = analysis["orderblock"]["aligned"]
-        strong_votes = analysis["buy_votes"] if side == "BUY" else analysis["sell_votes"]
-        q = analysis.get("quant", {})
-        quant_score = q.get("score", 0)
-        vol_regime = q.get("vol_regime", "NORMAL")
+    events = []
+    for i in range(len(d)):
+        row = d.loc[i]
+        av = avg_vol.iloc[i] if not pd.isna(avg_vol.iloc[i]) else row["volume"]
+        if av <= 0 or pd.isna(row["range"]) or row["range"] <= 0:
+            continue
+        if row["volume"] < av * min_vol_mult:
+            continue
+        if row["body_pct"] > max_body_pct:
+            continue
 
-        # Institutional gate: strong votes + quant score + prefer OB
-        if strong_votes >= 3 and abs(quant_score) >= 1.4 and (ob_ok or strong_votes >= 4):
-            # Volatility targeting: shrink size in HIGH vol
-            size_mult = 0.5 if vol_regime == "HIGH" else (1.2 if vol_regime == "LOW" else 1.0)
-            display_size = size
-            if selected_key == "bitcoin":
-                display_size = f"{0.05 * size_mult:.3f} BTC"
-            elif "lots" in size:
-                try:
-                    base_lots = float(size.split()[0])
-                    display_size = f"{base_lots * size_mult:.2f} lots"
-                except Exception:
-                    display_size = size
+        # Ask absorption (buyers absorb selling) — long lower wick, closes strong
+        if row["lower_wick"] > row["body"] * 1.2 and row["close"] >= row["open"]:
+            events.append({
+                "type": "ASK ABSORPTION",
+                "side": "BUY",
+                "price": float(row["low"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "volume": float(row["volume"]),
+                "time": row["time"],
+                "note": "Buyers absorbed sell pressure",
+            })
+        # Bid absorption (sellers absorb buying) — long upper wick, closes weak
+        elif row["upper_wick"] > row["body"] * 1.2 and row["close"] <= row["open"]:
+            events.append({
+                "type": "BID ABSORPTION",
+                "side": "SELL",
+                "price": float(row["high"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "volume": float(row["volume"]),
+                "time": row["time"],
+                "note": "Sellers absorbed buy pressure",
+            })
 
-            entry_offset = atr * 0.1
-            sl_dist = atr * 1.5
-            tp_dist = atr * 2.5
-            entry = round(current_price + (entry_offset if side == "BUY" else -entry_offset), decimals)
-            sl = round(current_price - sl_dist if side == "BUY" else current_price + sl_dist, decimals)
-            tp = round(current_price + tp_dist if side == "BUY" else current_price - tp_dist, decimals)
+    return events[-12:]
 
-            aligned = [k for k, v in analysis["votes"].items() if v == side]
-            aligned.append("InstitutionalQuant")
-            conf = min(0.95, 0.50 + strong_votes * 0.07 + min(0.15, abs(quant_score) * 0.05) + (0.08 if ob_ok else 0))
+def compute_vwap(df):
+    if df is None or len(df) < 2:
+        return None
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    cum_v = df["volume"].cumsum().replace(0, np.nan)
+    vwap = (tp * df["volume"]).cumsum() / cum_v
+    return float(vwap.iloc[-1]) if not pd.isna(vwap.iloc[-1]) else None
 
-            decision = {
-                "name": "9️⃣ Final Decision Agent",
-                "status": "TRADE READY",
-                "instrument": display_name,
-                "side": side,
-                "entry": entry,
-                "stop_loss": sl,
-                "take_profit": tp,
-                "size": display_size,
-                "confidence": conf,
-                "reasoning": (
-                    f"INSTITUTIONAL CONFLUENCE. Quant score {quant_score:+.2f} | "
-                    f"{strong_votes}/5 signals aligned: {', '.join(aligned)}. "
-                    f"Vol regime: {vol_regime}. "
-                    f"{'Order Block confirmed. ' if ob_ok else ''}"
-                    f"ATR-based SL/TP + volatility targeting."
-                ),
-                "aligned_agents": aligned,
-                "has_trade": True
-            }
-
-    # Build agent cards from real analysis
-    if analysis is None:
-        analysis = {
-            "rsi": {"value": 50, "signal": "NEUTRAL", "note": "Insufficient data"},
-            "macd": {"value": 0, "signal": "NEUTRAL", "note": "Insufficient data", "hist": 0},
-            "ema": {"ema20": current_price, "ema50": current_price, "signal": "NEUTRAL", "note": "Insufficient data"},
-            "volume_profile": {"poc": current_price, "vah": None, "val": None, "bias": "Neutral", "signal": "NEUTRAL", "note": "N/A"},
-            "atr": current_price * 0.01,
-            "orderblock": {"aligned": False, "nearest": None, "signal": "No data", "bias": "NEUTRAL", "confidence": 0},
-            "votes": {}, "buy_votes": 0, "sell_votes": 0, "final_bias": "NEUTRAL",
-            "quant": {
-                "score": 0, "signal": "NEUTRAL", "note": "Insufficient data",
-                "vol_regime": "NORMAL", "vol_note": "N/A", "trend_regime": "RANGING",
-                "mom_score": 0, "mr_score": 0, "flow_score": 0, "structure_score": 0, "vol_ratio": 1.0
-            }
-        }
-    if "quant" not in analysis:
-        analysis["quant"] = {
-            "score": 0, "signal": "NEUTRAL", "note": "N/A",
-            "vol_regime": "NORMAL", "vol_note": "N/A", "trend_regime": "RANGING",
-            "mom_score": 0, "mr_score": 0, "flow_score": 0, "structure_score": 0, "vol_ratio": 1.0
-        }
-
-    return {
-        "scanner": {
-            "name": "1️⃣ Market Scanner",
-            "status": "Active",
-            "priority": selected_key.upper(),
-            "summary": f"Bias: {analysis['final_bias']} | Buy votes: {analysis['buy_votes']} | Sell votes: {analysis['sell_votes']}",
-            "confidence": 0.85
-        },
-        "rsi_agent": {
-            "name": "2️⃣ RSI Agent (14)",
-            "status": "Active",
-            "analysis": analysis["rsi"]["note"],
-            "signal": analysis["rsi"]["signal"],
-            "value": analysis["rsi"]["value"],
-            "confidence": 0.80 if analysis["rsi"]["signal"] != "NEUTRAL" else 0.50
-        },
-        "macd_agent": {
-            "name": "3️⃣ MACD Agent (12/26/9)",
-            "status": "Active",
-            "analysis": analysis["macd"]["note"],
-            "signal": analysis["macd"]["signal"],
-            "value": analysis["macd"]["value"],
-            "hist": analysis["macd"]["hist"],
-            "confidence": 0.82 if analysis["macd"]["signal"] != "NEUTRAL" else 0.50
-        },
-        "volume_profile": {
-            "name": "4️⃣ Volume Profile Agent",
-            "status": "Active",
-            "analysis": analysis["volume_profile"]["note"],
-            "signal": analysis["volume_profile"]["signal"],
-            "poc": analysis["volume_profile"].get("poc"),
-            "vah": analysis["volume_profile"].get("vah"),
-            "val": analysis["volume_profile"].get("val"),
-            "confidence": 0.78 if analysis["volume_profile"]["signal"] != "NEUTRAL" else 0.50
-        },
-        "ema_agent": {
-            "name": "5️⃣ EMA Structure Agent",
-            "status": "Active",
-            "analysis": analysis["ema"]["note"],
-            "signal": analysis["ema"]["signal"],
-            "ema20": analysis["ema"]["ema20"],
-            "ema50": analysis["ema"]["ema50"],
-            "confidence": 0.81 if analysis["ema"]["signal"] != "NEUTRAL" else 0.50
-        },
-        "momentum": {
-            "name": "6️⃣ Momentum & ATR",
-            "status": "Active",
-            "analysis": f"ATR(14): {analysis['atr']:.4f} | Used for dynamic SL/TP (1.5× / 2.5×)",
-            "signal": "Volatility measured",
-            "confidence": 0.75
-        },
-        "quant_model": {
-            "name": "🏦 Institutional Quant Model (JPM-style)",
-            "status": "Active",
-            "analysis": analysis["quant"]["note"],
-            "signal": analysis["quant"]["signal"],
-            "score": analysis["quant"]["score"],
-            "vol_regime": analysis["quant"]["vol_regime"],
-            "vol_note": analysis["quant"]["vol_note"],
-            "trend_regime": analysis["quant"]["trend_regime"],
-            "confidence": min(0.92, 0.55 + abs(analysis["quant"]["score"]) * 0.12)
-        },
-        "news": {
-            "name": "7️⃣ News & Event Agent",
-            "status": "Active",
-            "upcoming": [
-                {"event": "US CPI (Core)", "time": "Today 18:30 IST", "impact": "HIGH", "focus": "Gold / BTC"},
-                {"event": "EIA Crude Inventories", "time": "Today 20:30 IST", "impact": "HIGH", "focus": "Crude"},
-                {"event": "FOMC Member Speech", "time": "Tomorrow 15:00 IST", "impact": "MEDIUM", "focus": "Gold / BTC"}
-            ],
-            "critical": "No critical breaking news in last 15 min",
-            "bias": "Watch high-impact events before increasing size"
-        },
-        "risk": {
-            "name": "8️⃣ Risk Manager",
-            "status": "Active",
-            "approved": True,
-            "max_risk": "0.5% equity",
-            "suggested_sl_atr": "1.5× ATR",
-            "position_size": size,
-            "veto": None,
-            "note": f"ATR-based stops active. Current ATR: {analysis['atr']:.4f}"
-        },
-        "orderblock": {
-            "name": "🔟 Order Block Scanner",
-            "status": "Active",
-            "levels": order_blocks,
-            "nearest": analysis["orderblock"]["nearest"],
-            "signal": analysis["orderblock"]["signal"],
-            "aligned": analysis["orderblock"]["aligned"],
-            "confidence": analysis["orderblock"]["confidence"]
-        },
-        "decision": decision,
-        "analysis": analysis  # full raw analysis for UI
-    }
-
-# ====================== SOUND ALERT JS ======================
-def play_alert_sound(kind="trade"):
-    """Inject a pleasant beep / chime via Web Audio API"""
-    if kind == "trade":
-        # Pleasant ascending chime
-        js = """
-        <script>
-        (function(){
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const notes = [523.25, 659.25, 783.99]; // C5 E5 G5
-            notes.forEach((freq, i) => {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.frequency.value = freq;
-                osc.type = 'sine';
-                gain.gain.setValueAtTime(0.25, ctx.currentTime + i*0.18);
-                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.18 + 0.4);
-                osc.start(ctx.currentTime + i*0.18);
-                osc.stop(ctx.currentTime + i*0.18 + 0.45);
-            });
-        })();
-        </script>
-        """
-    else:
-        # Soft alert beep for level touch
-        js = """
-        <script>
-        (function(){
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.frequency.value = 880;
-            osc.type = 'sine';
-            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-            osc.start(ctx.currentTime);
-            osc.stop(ctx.currentTime + 0.4);
-        })();
-        </script>
-        """
-    components.html(js, height=0)
-
-# ====================== SIDEBAR CONTROL PANEL ======================
+# ====================== SIDEBAR SETTINGS ======================
 with st.sidebar:
-    st.markdown("### ⚡ Control Panel")
+    st.markdown("### DEEP PROFILE")
+    st.caption("Deepcharts-style settings")
     st.markdown("---")
-    
-    if st.button("🔄 Refresh Now", use_container_width=True):
+
+    if st.button("REFRESH", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-    
-    auto_refresh = st.toggle("Live Auto-Refresh", value=False)
-    refresh_rate = st.slider("Refresh every (seconds)", 5, 60, 15)
-    
-    st.markdown("---")
-    st.markdown("### 📊 Instrument Focus")
-    selected_instrument = st.selectbox(
-        "Select Instrument (Chart + Agents)",
-        list(SYMBOLS.keys()),
-        index=0
-    )
-    selected_symbol = SYMBOLS[selected_instrument]
-    selected_key = SYMBOL_KEYS[selected_instrument]
-    
-    st.markdown("---")
-    st.markdown("### 🔔 Key Alert Settings")
-    enable_sound = st.toggle("Enable Sound Alerts", value=True)
-    alert_level = st.number_input(
-        "Alert Price Level",
-        value=0.0,
-        step=0.1,
-        help="Set a price. When live price reaches ±0.15% of this level, sound alert triggers."
-    )
-    alert_tolerance = st.slider("Alert Tolerance %", 0.05, 0.50, 0.15, 0.05)
-    
-    st.markdown("---")
-    st.markdown("### ⚙️ Trade Filters")
-    min_confluence = st.slider("Min Agents for Signal", 4, 8, 5)
-    require_ob = st.toggle("Require Order Block Alignment", value=True)
-    
-    st.markdown("---")
-    st.markdown("### System Status")
-    st.markdown('<span class="status-online">● RSI + MACD + Volume Profile + EMA + Order Block + Institutional Quant Online</span>', unsafe_allow_html=True)
-    st.caption(f"Last cycle: {datetime.now().strftime('%H:%M:%S')}")
-    
-    st.markdown("---")
-    st.markdown("### Risk Settings")
-    max_risk = st.slider("Max Risk per Trade %", 0.1, 2.0, 0.5, 0.1)
-    atr_mult = st.slider("Stop Loss ATR Multiplier", 1.0, 3.0, 1.5, 0.1)
-    
-    st.markdown("---")
-    st.info("Simulation + real Yahoo data. No real orders are executed.")
 
-# ====================== BLOOMBERG-STYLE HEADER ======================
-now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    auto = st.toggle("Auto refresh", value=False)
+    rate = st.slider("Refresh sec", 20, 120, 45)
+
+    st.markdown("---")
+    st.markdown("### INSTRUMENT")
+    selected = st.selectbox("Market", list(INSTRUMENTS.keys()), index=0)
+    inst = INSTRUMENTS[selected]
+    yf_sym = inst["yf"]
+    tv_sym = inst["tv"]
+    dec = inst["dec"]
+
+    st.markdown("---")
+    st.markdown("### PROFILE SETTINGS")
+    profile_bars = st.slider("Lookback bars", 40, 200, 100, 10)
+    n_bins = st.slider("Profile bins", 24, 80, 48, 4)
+    va_pct = st.slider("Value Area %", 50, 90, 70, 5) / 100.0
+    hvn_sens = st.slider("HVN / LVN sensitivity", 0.2, 1.5, 0.55, 0.05)
+
+    st.markdown("---")
+    st.markdown("### DISPLAY")
+    show_vp = st.toggle("Volume Profile histogram", value=True)
+    show_poc = st.toggle("POC line", value=True)
+    show_va = st.toggle("Value Area (VAH/VAL)", value=True)
+    show_hvn = st.toggle("HVN peaks", value=True)
+    show_lvn = st.toggle("LVN valleys", value=True)
+    show_vwap = st.toggle("VWAP", value=True)
+    show_abs = st.toggle("Absorption markers", value=True)
+    show_delta = st.toggle("Delta coloring on profile", value=True)
+
+    st.markdown("---")
+    st.markdown("### ABSORPTION FILTER")
+    abs_vol_mult = st.slider("Min vol × average", 1.2, 3.0, 1.8, 0.1)
+    abs_body = st.slider("Max body / range", 0.15, 0.50, 0.35, 0.05)
+
+    st.markdown("---")
+    st.markdown("### CHART SOURCE")
+    chart_mode = st.radio("Primary chart", ["Deep Profile (Plotly)", "TradingView embed"], index=0)
+    tv_tf = st.selectbox("TV interval", ["5", "15", "30", "60"], index=1)
+
+    st.markdown("---")
+    st.caption("Approx. profile from Yahoo OHLC volume (not tick data).")
+    st.caption("No real orders sent.")
+
+# ====================== DATA + ANALYSIS ======================
+ohlc_full = fetch_ohlc(yf_sym)
+if ohlc_full is not None:
+    ohlc = ohlc_full.tail(profile_bars).reset_index(drop=True)
+else:
+    ohlc = None
+
+last_px, prev_px = fetch_last(yf_sym)
+if last_px is None and ohlc is not None and len(ohlc):
+    last_px = float(ohlc["close"].iloc[-1])
+    prev_px = float(ohlc["close"].iloc[-2]) if len(ohlc) > 1 else last_px
+if last_px is None:
+    last_px, prev_px = 0.0, 0.0
+
+delta_px = last_px - (prev_px or last_px)
+delta_pct = (delta_px / last_px * 100) if last_px else 0
+
+profile = build_volume_profile(ohlc, bins=n_bins, va_pct=va_pct)
+hvn_list, lvn_list = detect_hvn_lvn(profile, sensitivity=hvn_sens) if profile else ([], [])
+absorptions = detect_absorption(ohlc, min_vol_mult=abs_vol_mult, max_body_pct=abs_body) if show_abs else []
+vwap_val = compute_vwap(ohlc) if show_vwap else None
+
+# ====================== HEADER ======================
+now = datetime.now()
 st.markdown(f"""
-<div class="bbg-header">
-    <div>
-        <span class="bbg-header-title">TERMINAL</span>
-        <span style="color:#444; margin:0 10px;">|</span>
-        <span style="color:#ccc; font-size:0.85rem; font-family:'Roboto Mono',monospace;">{selected_instrument}</span>
-        <span style="color:#444; margin:0 8px;">|</span>
-        <span style="color:#666; font-size:0.7rem;">RSI · MACD · VOL PROF · EMA · OB · QUANT</span>
-    </div>
-    <div class="bbg-header-sub">{now_str} IST</div>
+<div class="hdr">
+  <div>
+    <span class="hdr-title">DEEP PROFILE</span>
+    <span style="color:#2a2e39;margin:0 8px;">|</span>
+    <span style="color:#d1d4dc;font-size:0.85rem;">{selected}</span>
+    <span style="color:#2a2e39;margin:0 8px;">|</span>
+    <span style="color:#787b86;font-size:0.7rem;">POC · VA · HVN · LVN · ABSORPTION · VWAP</span>
+  </div>
+  <div class="hdr-sub">{now.strftime('%Y-%m-%d %H:%M:%S')} IST</div>
 </div>
 """, unsafe_allow_html=True)
 
-# ====================== LIVE PRICES ======================
-prices, changes, is_live = get_live_prices()
-current_price = prices[selected_key]
+poc_s = f"{profile['poc']:.{dec}f}" if profile else "—"
+vah_s = f"{profile['vah']:.{dec}f}" if profile else "—"
+val_s = f"{profile['val']:.{dec}f}" if profile else "—"
+dcls = "bull" if delta_px >= 0 else "bear"
 
-# OHLC data for selected instrument
-ohlc_df = generate_ohlc_history(selected_symbol)
-order_blocks = detect_order_blocks(ohlc_df)
-
-agents = get_agent_outputs(prices, selected_key, order_blocks, current_price, ohlc_df)
-
-data_source = "LIVE" if is_live else "SIM"
-delta = changes.get(selected_key, 0)
-delta_pct = (delta / current_price * 100) if current_price else 0
-delta_cls = "pos" if delta >= 0 else "neg"
-fmt_price = f"{current_price:,.3f}" if selected_key == "natgas" else f"{current_price:,.2f}"
-fmt_delta = f"{delta:+.3f}" if selected_key == "natgas" else f"{delta:+.2f}"
-
-# Bloomberg-style ticker quote strip
 st.markdown(f"""
-<div class="bbg-ticker-bar">
-    <span style="color:#ff6600; font-weight:700;">{selected_symbol}</span>
-    &nbsp;&nbsp;
-    <span style="color:#fff; font-weight:700; font-size:1.05rem;">{fmt_price}</span>
-    &nbsp;
-    <span class="{delta_cls}">{fmt_delta} ({delta_pct:+.2f}%)</span>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    SRC: <span style="color:#aaa;">{data_source}</span>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    OB: <span style="color:{'#00cc55' if agents['orderblock']['aligned'] else '#888'};">{'ALIGNED' if agents['orderblock']['aligned'] else 'WATCH'}</span>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    CONF: <span style="color:#ff6600;">{agents['decision']['confidence']*100:.0f}%</span>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    QUANT: <span style="color:#ccc;">{agents.get('quant_model', {}).get('score', 0):+.2f}</span>
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    VOL: <span style="color:#aaa;">{agents.get('quant_model', {}).get('vol_regime', '—')}</span>
+<div class="ticker">
+  <span style="color:#f0b90b;font-weight:700;">{yf_sym}</span>
+  &nbsp;&nbsp;
+  <span style="color:#fff;font-weight:700;font-size:1.05rem;">{last_px:,.{dec}f}</span>
+  &nbsp;<span class="{dcls}">{delta_px:+.{dec}f} ({delta_pct:+.2f}%)</span>
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  POC <span class="poc">{poc_s}</span>
+  &nbsp;|&nbsp;
+  VAH <span class="vah">{vah_s}</span>
+  &nbsp;|&nbsp;
+  VAL <span class="val">{val_s}</span>
+  &nbsp;|&nbsp;
+  HVN <span class="hvn">{len(hvn_list)}</span>
+  &nbsp;|&nbsp;
+  LVN <span class="lvn">{len(lvn_list)}</span>
+  &nbsp;|&nbsp;
+  ABS <span class="amber">{len(absorptions)}</span>
+  {"&nbsp;|&nbsp; VWAP <span class='amber'>" + f"{vwap_val:.{dec}f}" + "</span>" if vwap_val else ""}
 </div>
 """, unsafe_allow_html=True)
 
-# Compact metrics row
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    st.metric("LAST", fmt_price, f"{fmt_delta}")
-with col2:
-    st.metric("ORDER BLOCKS", len(order_blocks), "zones")
-with col3:
-    conf = agents["decision"]["confidence"]
-    st.metric("CONFLUENCE", f"{conf*100:.0f}%" if conf > 0 else "—", "READY" if agents["decision"]["has_trade"] else "WAIT")
-with col4:
-    st.metric("OB STATUS", "ALIGNED" if agents["orderblock"]["aligned"] else "WATCH")
-with col5:
-    qscore = agents.get("quant_model", {}).get("score", 0)
-    st.metric("QUANT SCORE", f"{qscore:+.2f}")
+m1, m2, m3, m4, m5, m6 = st.columns(6)
+m1.metric("LAST", f"{last_px:,.{dec}f}", f"{delta_px:+.{dec}f}")
+m2.metric("POC", poc_s)
+m3.metric("VAH", vah_s)
+m4.metric("VAL", val_s)
+m5.metric("HVN / LVN", f"{len(hvn_list)} / {len(lvn_list)}")
+m6.metric("ABSORPTION", len(absorptions))
 
-# ====================== CHART ======================
-st.markdown(f'<div class="bbg-panel-title" style="margin-top:10px;">{selected_symbol} — CANDLESTICK + VOLUME + ORDER BLOCKS</div>', unsafe_allow_html=True)
+# ====================== MAIN CHART ======================
+left, right = st.columns([1.7, 1])
 
-fig = make_subplots(
-    rows=2, cols=1,
-    shared_xaxes=True,
-    vertical_spacing=0.03,
-    row_heights=[0.72, 0.28],
-    subplot_titles=(f"{selected_symbol} Price", "Volume")
-)
+with left:
+    st.markdown('<div class="panel-t">VOLUME PROFILE CHART</div>', unsafe_allow_html=True)
 
-# Candlesticks
-fig.add_trace(go.Candlestick(
-    x=ohlc_df["time"],
-    open=ohlc_df["open"],
-    high=ohlc_df["high"],
-    low=ohlc_df["low"],
-    close=ohlc_df["close"],
-    name="OHLC",
-    increasing_line_color="#00cc55",
-    decreasing_line_color="#ff3333",
-    increasing_fillcolor="#00cc55",
-    decreasing_fillcolor="#ff3333"
-), row=1, col=1)
-
-# Simple Moving Averages
-if len(ohlc_df) >= 20:
-    ohlc_df["ma20"] = ohlc_df["close"].rolling(20).mean()
-    ohlc_df["ma50"] = ohlc_df["close"].rolling(50).mean() if len(ohlc_df) >= 50 else None
-    fig.add_trace(go.Scatter(
-        x=ohlc_df["time"], y=ohlc_df["ma20"],
-        mode="lines", name="MA20",
-        line=dict(color="#fbbf24", width=1.5)
-    ), row=1, col=1)
-    if ohlc_df["ma50"] is not None:
-        fig.add_trace(go.Scatter(
-            x=ohlc_df["time"], y=ohlc_df["ma50"],
-            mode="lines", name="MA50",
-            line=dict(color="#38bdf8", width=1.5)
-        ), row=1, col=1)
-
-# Order Block zones as horizontal rectangles / lines
-colors_ob = {"Bullish OB": "rgba(34, 197, 94, 0.25)", "Bearish OB": "rgba(239, 68, 68, 0.25)"}
-line_colors = {"Bullish OB": "#00cc55", "Bearish OB": "#ff3333"}
-
-for ob in order_blocks:
-    fig.add_hrect(
-        y0=ob["bottom"], y1=ob["top"],
-        fillcolor=colors_ob.get(ob["type"], "rgba(99,102,241,0.2)"),
-        line_width=0,
-        row=1, col=1
-    )
-    fig.add_hline(
-        y=ob["mid"],
-        line_dash="dash",
-        line_color=line_colors.get(ob["type"], "#6366f1"),
-        line_width=1.5,
-        annotation_text=f"{ob['type']} {ob['mid']:.2f}",
-        annotation_position="right",
-        row=1, col=1
-    )
-
-# Volume bars
-colors_vol = ["#00cc55" if c >= o else "#ff3333" for c, o in zip(ohlc_df["close"], ohlc_df["open"])]
-fig.add_trace(go.Bar(
-    x=ohlc_df["time"],
-    y=ohlc_df["volume"],
-    name="Volume",
-    marker_color=colors_vol,
-    opacity=0.7
-), row=2, col=1)
-
-fig.update_layout(
-    template="plotly_dark",
-    height=480,
-    margin=dict(l=8, r=8, t=28, b=8),
-    paper_bgcolor="#000000",
-    plot_bgcolor="#000000",
-    font=dict(family="Roboto Mono, monospace", color="#aaa", size=11),
-    xaxis_rangeslider_visible=False,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10, color="#888")),
-    hovermode="x unified"
-)
-fig.update_xaxes(showgrid=False, row=1, col=1, color="#444")
-fig.update_xaxes(showgrid=False, row=2, col=1, color="#444")
-fig.update_yaxes(showgrid=True, gridcolor="#1a1a1a", row=1, col=1, color="#666")
-fig.update_yaxes(showgrid=False, row=2, col=1, color="#666")
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ====================== ORDER BLOCK SCANNER PANEL ======================
-st.markdown('<div class="bbg-panel-title">ORDER BLOCK SCANNER — KEY LEVELS</div>', unsafe_allow_html=True)
-
-if order_blocks:
-    ob_cols = st.columns(min(4, len(order_blocks)))
-    for idx, ob in enumerate(order_blocks):
-        with ob_cols[idx % len(ob_cols)]:
-            color = "#00cc55" if "Bullish" in ob["type"] else "#ff3333"
-            st.markdown(f"""
-            <div class="ob-card">
-                <div style="color:{color}; font-weight:600;">{ob['type']}</div>
-                <p style="color:#e2e8f0; font-size:0.9rem; margin:0.3rem 0;">
-                    Zone: <b>{ob['bottom']:.2f} – {ob['top']:.2f}</b><br>
-                    Mid: <b>{ob['mid']:.2f}</b><br>
-                    Strength: {ob['strength']*100:.0f}%
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-else:
-    st.info("No high-quality Order Blocks detected in the recent window. Scanner continues monitoring.")
-
-st.markdown(f"**Scanner Signal:** {agents['orderblock']['signal']}")
-
-st.markdown("---")
-
-# ====================== FINAL DECISION (CONDITIONAL) ======================
-st.markdown('<div class="bbg-panel-title">TRADE DECISION — INSTITUTIONAL GATE</div>', unsafe_allow_html=True)
-
-decision = agents["decision"]
-
-if decision["has_trade"]:
-    st.markdown(f"""
-    <div class="decision-box">
-        <div style="color:#00cc55; font-size:0.85rem; font-weight:700; letter-spacing:1px; margin-bottom:8px;">
-            TRADE SIGNAL — {decision['side']} {decision['instrument']}
+    if chart_mode.startswith("TradingView"):
+        html = f"""
+        <div style="height:560px;width:100%;">
+          <div id="tv_chart" style="height:100%;width:100%;"></div>
+          <script src="https://s3.tradingview.com/tv.js"></script>
+          <script>
+          new TradingView.widget({{
+            container_id: "tv_chart", width: "100%", height: 560,
+            symbol: "{tv_sym}", interval: "{tv_tf}", timezone: "Asia/Kolkata",
+            theme: "dark", style: "1", locale: "en", toolbar_bg: "#0b0e11",
+            enable_publishing: false, hide_legend: false, support_host: "https://www.tradingview.com"
+          }});
+          </script>
         </div>
-        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin:8px 0; font-family:'Roboto Mono',monospace;">
-            <div><span style="color:#666; font-size:0.7rem;">ENTRY</span><br><span style="font-size:1.2rem; color:#fff; font-weight:600;">{decision['entry']}</span></div>
-            <div><span style="color:#666; font-size:0.7rem;">STOP</span><br><span style="font-size:1.2rem; color:#ff3333; font-weight:600;">{decision['stop_loss']}</span></div>
-            <div><span style="color:#666; font-size:0.7rem;">TARGET</span><br><span style="font-size:1.2rem; color:#00cc55; font-weight:600;">{decision['take_profit']}</span></div>
-            <div><span style="color:#666; font-size:0.7rem;">SIZE</span><br><span style="font-size:1.2rem; color:#fff; font-weight:600;">{decision['size']}</span></div>
-        </div>
-        <p style="color:#00aa44; font-size:0.8rem; margin:6px 0 0 0;">
-            CONF {decision['confidence']*100:.0f}% &nbsp;|&nbsp; ALIGNED: {', '.join(decision['aligned_agents'])}
-        </p>
-        <p style="color:#888; font-size:0.75rem; margin:4px 0 0 0;">{decision['reasoning']}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    if enable_sound:
-        play_alert_sound("trade")
-else:
-    st.markdown(f"""
-    <div class="decision-box-wait">
-        <div style="color:#666; font-size:0.85rem; font-weight:700; letter-spacing:1px; margin-bottom:6px;">
-            NO TRADE — AWAITING CONFLUENCE
-        </div>
-        <p style="color:#888; font-size:0.8rem; margin:0;">{decision['reasoning']}</p>
-        <p style="color:#555; font-size:0.75rem; margin:4px 0 0 0;">
-            ALIGNED: {', '.join(decision['aligned_agents']) if decision['aligned_agents'] else 'NONE'}
-            &nbsp;|&nbsp; NEED: OB + ≥{min_confluence} SIGNALS + QUANT
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+        """
+        components.html(html, height=580)
+        st.caption("Draw POC / VAH / VAL / HVN from the right panel onto TradingView.")
+    else:
+        if ohlc is None or len(ohlc) < 5:
+            st.warning("No OHLC data — try refresh or another instrument.")
+        else:
+            fig = make_subplots(
+                rows=1, cols=2,
+                column_widths=[0.72, 0.28],
+                shared_yaxes=True,
+                horizontal_spacing=0.02,
+            )
 
-# ====================== KEY LEVEL ALERT CHECK ======================
-if alert_level > 0 and enable_sound:
-    tolerance = current_price * (alert_tolerance / 100)
-    if abs(current_price - alert_level) <= tolerance:
-        play_alert_sound("level")
-        st.warning(f"KEY LEVEL HIT — {current_price:.2f} near {alert_level:.2f}")
+            # Candles
+            fig.add_trace(go.Candlestick(
+                x=ohlc["time"], open=ohlc["open"], high=ohlc["high"],
+                low=ohlc["low"], close=ohlc["close"], name="OHLC",
+                increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
+                increasing_fillcolor="#26a69a", decreasing_fillcolor="#ef5350",
+            ), row=1, col=1)
 
-# ====================== POWERFUL REAL-INDICATOR AGENTS ======================
-st.markdown('<div class="bbg-panel-title" style="margin-top:12px;">AGENT PANEL — LIVE SIGNALS</div>', unsafe_allow_html=True)
+            # VWAP line
+            if show_vwap and vwap_val:
+                fig.add_hline(y=vwap_val, line_dash="dot", line_color="#f0b90b",
+                              line_width=1, annotation_text="VWAP", annotation_position="right", row=1, col=1)
 
-def _signal_color(sig):
-    if sig == "BUY":
-        return "#00cc55"
-    if sig == "SELL":
-        return "#ff3333"
-    return "#94a3b8"
+            # POC / VA
+            if profile:
+                if show_poc:
+                    fig.add_hline(y=profile["poc"], line_color="#e91e8c", line_width=1.5,
+                                  annotation_text=f"POC {profile['poc']:.{dec}f}",
+                                  annotation_position="left", row=1, col=1)
+                if show_va:
+                    fig.add_hline(y=profile["vah"], line_dash="dash", line_color="#26a69a", line_width=1,
+                                  annotation_text="VAH", annotation_position="left", row=1, col=1)
+                    fig.add_hline(y=profile["val"], line_dash="dash", line_color="#ef5350", line_width=1,
+                                  annotation_text="VAL", annotation_position="left", row=1, col=1)
+                    fig.add_hrect(y0=profile["val"], y1=profile["vah"],
+                                  fillcolor="rgba(38,166,154,0.06)", line_width=0, row=1, col=1)
 
-# ===== Institutional Quant Model (prominent) =====
-qm = agents.get("quant_model")
-if qm:
-    qsc = _signal_color(qm["signal"])
-    st.markdown(f"""
-    <div class="agent-card" style="border: 1px solid #6366f1; background: linear-gradient(145deg, #1e1b4b 0%, #0f172a 100%);">
-        <div class="agent-title" style="color:#a5b4fc;">{qm['name']}</div>
-        <p style="color:#e2e8f0; font-size:0.9rem;">{qm['analysis']}</p>
-        <p style="color:{qsc}; font-size:1.05rem; font-weight:700;">Signal: {qm['signal']} &nbsp;|&nbsp; Score: {qm['score']:+.2f}</p>
-        <p style="color:#94a3b8; font-size:0.85rem;">
-            Vol Regime: <b>{qm['vol_regime']}</b> — {qm['vol_note']}<br>
-            Trend Regime: <b>{qm['trend_regime']}</b> &nbsp;|&nbsp; Confidence: {qm['confidence']*100:.0f}%
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+                # HVN bands
+                if show_hvn:
+                    for h in hvn_list[:5]:
+                        fig.add_hline(y=h["price"], line_color="rgba(66,165,245,0.7)", line_width=1,
+                                      line_dash="dot", row=1, col=1)
 
-# Row 1 — Core precision bots
-r1c1, r1c2, r1c3 = st.columns(3)
-with r1c1:
-    a = agents["scanner"]
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#94a3b8; font-size:0.85rem;"><b>Focus:</b> {a['priority']}</p>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['summary']}</p>
-        <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+                # LVN
+                if show_lvn:
+                    for lv in lvn_list[:4]:
+                        fig.add_hline(y=lv["price"], line_color="rgba(171,71,188,0.5)", line_width=1,
+                                      line_dash="dot", row=1, col=1)
 
-with r1c2:
-    a = agents["rsi_agent"]
-    sc = _signal_color(a["signal"])
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['analysis']}</p>
-        <p style="color:{sc}; font-size:0.95rem; font-weight:600;"><b>Signal: {a['signal']}</b> (RSI {a['value']})</p>
-        <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+                # Volume profile histogram (horizontal)
+                if show_vp:
+                    colors = []
+                    for i, dlt in enumerate(profile["delta"]):
+                        if show_delta:
+                            colors.append("#26a69a" if dlt >= 0 else "#ef5350")
+                        else:
+                            colors.append("#42a5f5")
+                    # highlight POC bar
+                    colors[profile["poc_idx"]] = "#e91e8c"
 
-with r1c3:
-    a = agents["macd_agent"]
-    sc = _signal_color(a["signal"])
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['analysis']}</p>
-        <p style="color:{sc}; font-size:0.95rem; font-weight:600;"><b>Signal: {a['signal']}</b></p>
-        <p style="color:#94a3b8; font-size:0.8rem;">Hist: {a['hist']}</p>
-        <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+                    fig.add_trace(go.Bar(
+                        x=profile["volume"],
+                        y=profile["centers"],
+                        orientation="h",
+                        marker_color=colors,
+                        opacity=0.75,
+                        name="Volume Profile",
+                        hovertemplate="Price %{y:." + str(dec) + "f}<br>Vol %{x:.0f}<extra></extra>",
+                    ), row=1, col=2)
 
-# Row 2 — Volume Profile + EMA + Momentum
-r2c1, r2c2, r2c3 = st.columns(3)
-with r2c1:
-    a = agents["volume_profile"]
-    sc = _signal_color(a["signal"])
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['analysis']}</p>
-        <p style="color:{sc}; font-size:0.95rem; font-weight:600;"><b>Signal: {a['signal']}</b></p>
-        <p style="color:#a5b4fc; font-size:0.8rem;">POC: {a.get('poc')} | VAH: {a.get('vah')} | VAL: {a.get('val')}</p>
-        <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+            # Absorption markers on price chart
+            if show_abs and absorptions:
+                abs_x, abs_y, abs_c, abs_t = [], [], [], []
+                for a in absorptions:
+                    abs_x.append(a["time"])
+                    abs_y.append(a["price"])
+                    abs_c.append("#26a69a" if a["side"] == "BUY" else "#ef5350")
+                    abs_t.append(a["type"])
+                fig.add_trace(go.Scatter(
+                    x=abs_x, y=abs_y, mode="markers",
+                    marker=dict(size=11, symbol="diamond", color=abs_c, line=dict(width=1, color="#fff")),
+                    name="Absorption",
+                    text=abs_t,
+                    hovertemplate="%{text}<br>%{y:." + str(dec) + "f}<extra></extra>",
+                ), row=1, col=1)
 
-with r2c2:
-    a = agents["ema_agent"]
-    sc = _signal_color(a["signal"])
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['analysis']}</p>
-        <p style="color:{sc}; font-size:0.95rem; font-weight:600;"><b>Signal: {a['signal']}</b></p>
-        <p style="color:#94a3b8; font-size:0.8rem;">EMA20: {a['ema20']} | EMA50: {a['ema50']}</p>
-        <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+            fig.update_layout(
+                template="plotly_dark",
+                height=560,
+                margin=dict(l=8, r=8, t=24, b=8),
+                paper_bgcolor="#0b0e11",
+                plot_bgcolor="#0b0e11",
+                font=dict(family="Roboto Mono, monospace", color="#787b86", size=10),
+                xaxis_rangeslider_visible=False,
+                showlegend=False,
+                hovermode="x unified",
+            )
+            fig.update_xaxes(showgrid=False, row=1, col=1)
+            fig.update_xaxes(showgrid=False, title_text="Volume", row=1, col=2)
+            fig.update_yaxes(showgrid=True, gridcolor="#1a1e28", row=1, col=1)
+            fig.update_yaxes(showgrid=False, row=1, col=2)
 
-with r2c3:
-    a = agents["momentum"]
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['analysis']}</p>
-        <p style="color:#ff6600; font-size:0.85rem;"><b>{a['signal']}</b></p>
-        <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
-    </div>
-    """, unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True)
 
-# Row 3 — News + Risk + Order Block
-r3c1, r3c2, r3c3 = st.columns(3)
-
-with r3c1:
-    a = agents["news"]
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:#fbbf24; font-size:0.85rem;"><b>Bias:</b> {a['bias']}</p>
-        <p style="color:#94a3b8; font-size:0.8rem;">{a['critical']}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("#### 🚨 Upcoming High-Impact Events")
-    for event in a["upcoming"]:
-        color = "#ff3333" if event["impact"] == "HIGH" else "#f59e0b"
+with right:
+    # Key levels panel
+    st.markdown('<div class="panel-t">KEY LEVELS</div>', unsafe_allow_html=True)
+    if profile:
         st.markdown(f"""
-        <div class="news-alert">
-            <strong style="color:{color};">{event['impact']}</strong> — {event['event']}<br>
-            <span style="color:#fca5a5; font-size:0.85rem;">{event['time']} | Focus: {event['focus']}</span>
+        <div class="panel">
+          <div class="row"><span>POC</span><span class="poc">{profile['poc']:.{dec}f}</span></div>
+          <div class="row"><span>VAH</span><span class="vah">{profile['vah']:.{dec}f}</span></div>
+          <div class="row"><span>VAL</span><span class="val">{profile['val']:.{dec}f}</span></div>
+          <div class="row"><span>VWAP</span><span class="amber">{f"{vwap_val:.{dec}f}" if vwap_val else "—"}</span></div>
+          <div class="row"><span>VA %</span><span style="color:#787b86;">{int(va_pct*100)}%</span></div>
+          <div class="row"><span>BINS</span><span style="color:#787b86;">{n_bins}</span></div>
         </div>
         """, unsafe_allow_html=True)
+    else:
+        st.caption("Profile unavailable")
 
-with r3c2:
-    a = agents["risk"]
-    status_color = "#10b981" if a["approved"] else "#ff3333"
-    st.markdown(f"""
-    <div class="agent-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:{status_color}; font-size:1rem; font-weight:600;">
-            {'✅ APPROVED' if a['approved'] else '❌ VETOED'}
-        </p>
-        <p style="color:#e2e8f0; font-size:0.85rem;">
-            Max Risk: {a['max_risk']}<br>
-            Stop: {a['suggested_sl_atr']}<br>
-            Size: {a['position_size']}<br>
-            {a['note']}
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # HVN
+    st.markdown('<div class="panel-t">HVN — HIGH VOLUME NODES (PEAKS)</div>', unsafe_allow_html=True)
+    if hvn_list:
+        for h in hvn_list:
+            st.markdown(f"""
+            <div class="panel" style="border-left:3px solid #42a5f5;padding:6px 10px;margin-bottom:4px;">
+              <div class="row"><span class="hvn">HVN</span><span style="color:#d1d4dc;font-weight:600;">{h['price']:.{dec}f}</span></div>
+              <div class="row"><span>Volume share</span><span style="color:#787b86;">{h['pct']:.1f}%</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.caption("No HVN — lower sensitivity or more bars")
 
-with r3c3:
-    a = agents["orderblock"]
-    align_color = "#10b981" if a["aligned"] else "#f59e0b"
-    st.markdown(f"""
-    <div class="ob-card">
-        <div class="agent-title">{a['name']}</div>
-        <p style="color:{align_color}; font-size:1rem; font-weight:600;">
-            {'✅ ALIGNED' if a['aligned'] else '⏳ MONITORING'}
-        </p>
-        <p style="color:#e2e8f0; font-size:0.85rem;">{a['signal']}</p>
-        <p style="color:#a5b4fc; font-size:0.8rem;">Levels detected: {len(a['levels'])}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("#### Alignment Status")
-    for name in ["Scanner", "Technical", "Momentum", "Sentiment", "Macro", "Risk", "OrderBlock"]:
-        icon = "✅" if name in decision["aligned_agents"] or (name == "Risk" and agents["risk"]["approved"]) else "⚪"
-        st.markdown(f"{icon} {name}")
+    # LVN
+    st.markdown('<div class="panel-t">LVN — LOW VOLUME NODES (VALLEYS)</div>', unsafe_allow_html=True)
+    if lvn_list:
+        for lv in lvn_list:
+            st.markdown(f"""
+            <div class="panel" style="border-left:3px solid #ab47bc;padding:6px 10px;margin-bottom:4px;">
+              <div class="row"><span class="lvn">LVN</span><span style="color:#d1d4dc;font-weight:600;">{lv['price']:.{dec}f}</span></div>
+              <div class="row"><span>Volume share</span><span style="color:#787b86;">{lv['pct']:.1f}%</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.caption("No LVN detected")
 
-# ====================== FOOTER ======================
-st.markdown("---")
-st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST | Real data via Yahoo Finance (delayed) | No real orders sent | LangGraph-style multi-agent architecture")
+    # Absorption
+    st.markdown('<div class="panel-t">ABSORPTION</div>', unsafe_allow_html=True)
+    if absorptions:
+        for a in reversed(absorptions[-6:]):
+            cls = "abs-buy" if a["side"] == "BUY" else "abs-sell"
+            st.markdown(f"""
+            <div class="panel" style="border-left:3px solid {'#26a69a' if a['side']=='BUY' else '#ef5350'};padding:6px 10px;margin-bottom:4px;">
+              <div class="row"><span class="{cls}">{a['type']}</span><span style="color:#d1d4dc;">{a['price']:.{dec}f}</span></div>
+              <div style="color:#787b86;font-size:0.7rem;">{a['note']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.caption("No absorption events — adjust filters")
 
-# ====================== AUTO REFRESH ======================
-if auto_refresh:
-    time.sleep(refresh_rate)
+# ====================== GUIDE ======================
+with st.expander("HOW TO READ (Deepcharts-style)"):
+    st.markdown("""
+**POC (Point of Control)** — price with the most traded volume. Magnet / fair value.
+
+**Value Area (VAH / VAL)** — zone containing X% of volume (default 70%). Acceptance zone.
+
+**HVN (High Volume Node / Peak)** — heavy acceptance. Price often rotates or reacts here (support/resistance).
+
+**LVN (Low Volume Node / Valley)** — thin volume. Price can move through quickly (imbalance / gap in interest).
+
+**Absorption**
+- **ASK ABSORPTION** — aggressive sells absorbed by buyers → possible bounce / support
+- **BID ABSORPTION** — aggressive buys absorbed by sellers → possible rejection / resistance
+
+**Settings tip**
+- More bins = finer profile  
+- Higher HVN sensitivity = fewer, stronger nodes  
+- Higher min vol mult = only strong absorption events  
+
+> Profile is built from Yahoo Finance OHLC+volume (not exchange tick data). For true order-flow delta, use a platform with CME/tick feeds.
+""")
+
+st.caption(f"Deep Profile Terminal · {yf_sym} · POC {poc_s} · VAH {vah_s} · VAL {val_s} · Signal only — no orders")
+
+if auto:
+    import time
+    time.sleep(rate)
     st.rerun()
