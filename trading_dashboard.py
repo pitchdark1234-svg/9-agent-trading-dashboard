@@ -1,6 +1,6 @@
-"""
+""
 9+1 Agent AI Trading Command Center
-Gold | Crude Oil | Natural Gas
+Gold | Crude Oil | Natural Gas | Bitcoin
 Live dashboard with Order Block Scanner, Yahoo-style charts, conditional signals & sound alerts
 """
 
@@ -114,13 +114,15 @@ st.markdown("""
 SYMBOLS = {
     "Gold (XAUUSD)": "GC=F",
     "Crude Oil (WTI)": "CL=F",
-    "Natural Gas": "NG=F"
+    "Natural Gas": "NG=F",
+    "Bitcoin (BTC)": "BTC-USD"
 }
 
 SYMBOL_KEYS = {
     "Gold (XAUUSD)": "gold",
     "Crude Oil (WTI)": "crude",
-    "Natural Gas": "natgas"
+    "Natural Gas": "natgas",
+    "Bitcoin (BTC)": "bitcoin"
 }
 
 @st.cache_data(ttl=45)
@@ -171,7 +173,7 @@ def generate_ohlc_history(symbol, periods=120):
     except Exception:
         pass
     # Fallback simulated OHLC
-    base = {"GC=F": 2650, "CL=F": 73, "NG=F": 2.9}.get(symbol, 100)
+    base = {"GC=F": 2650, "CL=F": 73, "NG=F": 2.9, "BTC-USD": 64000}.get(symbol, 100)
     np.random.seed(hash(symbol) % 2**32)
     returns = np.random.normal(0, 0.0012, periods)
     closes = base * np.cumprod(1 + returns)
@@ -192,10 +194,11 @@ def get_live_prices():
     base = {
         "gold": 2651.20 + random.uniform(-3, 3),
         "crude": 72.85 + random.uniform(-0.4, 0.4),
-        "natgas": 2.87 + random.uniform(-0.05, 0.05)
+        "natgas": 2.87 + random.uniform(-0.05, 0.05),
+        "bitcoin": 64000 + random.uniform(-800, 800)
     }
     prices = {k: round(v, 2 if k != "natgas" else 3) for k, v in base.items()}
-    changes = {k: round(random.uniform(-2, 2), 2) for k in prices}
+    changes = {k: round(random.uniform(-2, 2) if k != "bitcoin" else random.uniform(-400, 400), 2) for k in prices}
     return prices, changes, False
 
 def detect_order_blocks(df, lookback=40):
@@ -312,21 +315,40 @@ def get_agent_outputs(prices, selected_key, order_blocks, current_price):
     confluence_score = len(aligned)
     full_confluence = confluence_score >= 5 and ob_aligned and risk_ok
     
-    # Decision only if full confluence
-    if full_confluence and selected_key == "gold":
+    # Decision only if full confluence (works for Gold, Crude, NatGas, Bitcoin)
+    instrument_names = {
+        "gold": "XAUUSD (Gold)",
+        "crude": "CL (Crude Oil)",
+        "natgas": "NG (Natural Gas)",
+        "bitcoin": "BTC-USD (Bitcoin)"
+    }
+    display_name = instrument_names.get(selected_key, selected_key.upper())
+
+    # Adaptive SL/TP distances by instrument
+    if selected_key == "gold":
+        entry_offset, sl_dist, tp_dist, size = 0.4, 18.5, 32.0, "0.40 lots"
+    elif selected_key == "crude":
+        entry_offset, sl_dist, tp_dist, size = 0.05, 0.85, 1.50, "1.00 lots"
+    elif selected_key == "natgas":
+        entry_offset, sl_dist, tp_dist, size = 0.01, 0.08, 0.15, "2.00 lots"
+    else:  # bitcoin
+        entry_offset, sl_dist, tp_dist, size = 15, 450, 900, "0.05 BTC"
+
+    if full_confluence:
         side = "BUY" if nearest_ob and nearest_ob["type"] == "Bullish OB" else ("SELL" if nearest_ob and nearest_ob["type"] == "Bearish OB" else tech_signal)
-        entry = round(current_price + (0.4 if side == "BUY" else -0.4), 2)
-        sl = round(current_price - 18.5 if side == "BUY" else current_price + 18.5, 2)
-        tp = round(current_price + 32.0 if side == "BUY" else current_price - 32.0, 2)
+        decimals = 3 if selected_key == "natgas" else 2
+        entry = round(current_price + (entry_offset if side == "BUY" else -entry_offset), decimals)
+        sl = round(current_price - sl_dist if side == "BUY" else current_price + sl_dist, decimals)
+        tp = round(current_price + tp_dist if side == "BUY" else current_price - tp_dist, decimals)
         decision = {
             "name": "9️⃣ Final Decision Agent",
             "status": "TRADE READY",
-            "instrument": "XAUUSD (Gold)",
+            "instrument": display_name,
             "side": side,
             "entry": entry,
             "stop_loss": sl,
             "take_profit": tp,
-            "size": "0.40 lots",
+            "size": size,
             "confidence": min(0.92, 0.70 + confluence_score * 0.04),
             "reasoning": f"FULL CONFLUENCE ({confluence_score}/9+OB). Order Block + Technical + Sentiment + Macro aligned. Risk approved. Clear window.",
             "aligned_agents": aligned,
@@ -336,7 +358,7 @@ def get_agent_outputs(prices, selected_key, order_blocks, current_price):
         decision = {
             "name": "9️⃣ Final Decision Agent",
             "status": "WAITING",
-            "instrument": selected_key.upper(),
+            "instrument": display_name,
             "side": "—",
             "entry": "—",
             "stop_loss": "—",
@@ -352,10 +374,11 @@ def get_agent_outputs(prices, selected_key, order_blocks, current_price):
         "scanner": {
             "name": "1️⃣ Market Scanner",
             "status": "Active",
-            "gold": f"Trend: {gold_bias} | Key Level: {prices['gold']-5:.1f}",
-            "crude": f"Trend: {crude_bias} | Key Level: {prices['crude']+0.8:.2f}",
+            "gold": f"Trend: {gold_bias} | Key Level: {prices.get('gold', 0)-5:.1f}",
+            "crude": f"Trend: {crude_bias} | Key Level: {prices.get('crude', 0)+0.8:.2f}",
             "natgas": "Trend: Range-bound | Key Level: 2.85",
-            "priority": "GOLD" if selected_key == "gold" else selected_key.upper(),
+            "bitcoin": f"Trend: {'Bullish' if random.random()>0.4 else 'Bearish'} | Key Level: {prices.get('bitcoin', 64000)-350:.0f}",
+            "priority": selected_key.upper(),
             "confidence": 0.82
         },
         "technical": {
@@ -393,15 +416,15 @@ def get_agent_outputs(prices, selected_key, order_blocks, current_price):
         "macro": {
             "name": "6️⃣ Macro & Correlation",
             "status": "Active",
-            "analysis": "USD soft | Yields contained | Risk environment supportive for metals.",
+            "analysis": "USD soft | Yields contained | Risk environment mixed for metals & crypto.",
             "signal": "Macro tailwind" if macro_ok else "Macro neutral",
             "confidence": 0.77 if macro_ok else 0.58
         },
         "supply_demand": {
             "name": "7️⃣ Supply / Demand",
             "status": "Active",
-            "analysis": "Gold: CB buying continues. Crude: Expected draw. NatGas: Elevated storage.",
-            "signal": "Mild bullish bias selected instrument",
+            "analysis": "Gold: CB buying. Crude: Inventory focus. NatGas: Storage elevated. BTC: On-chain flows & ETF flows watched.",
+            "signal": "Mild bias on selected instrument",
             "confidence": 0.68
         },
         "risk": {
@@ -548,7 +571,14 @@ st.caption(f"Data Source: {data_source} | Focus: {selected_instrument} ({selecte
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     delta = changes.get(selected_key, 0)
-    label = f"🥇 {selected_instrument}" if selected_key == "gold" else (f"🛢️ {selected_instrument}" if selected_key == "crude" else f"🔥 {selected_instrument}")
+    if selected_key == "gold":
+        label = f"🥇 {selected_instrument}"
+    elif selected_key == "crude":
+        label = f"🛢️ {selected_instrument}"
+    elif selected_key == "natgas":
+        label = f"🔥 {selected_instrument}"
+    else:
+        label = f"₿ {selected_instrument}"
     fmt = f"{current_price:,.3f}" if selected_key == "natgas" else f"{current_price:,.2f}"
     st.metric(label, fmt, f"{delta:+.3f}" if selected_key == "natgas" else f"{delta:+.2f}")
 with col2:
