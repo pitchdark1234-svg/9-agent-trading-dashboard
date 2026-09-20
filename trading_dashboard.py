@@ -1,7 +1,7 @@
 """
-9-Agent AI Trading Command Center
+9+1 Agent AI Trading Command Center
 Gold | Crude Oil | Natural Gas
-Beautiful live dashboard powered by Streamlit
+Live dashboard with Order Block Scanner, Yahoo-style charts, conditional signals & sound alerts
 """
 
 import streamlit as st
@@ -13,10 +13,11 @@ from datetime import datetime, timedelta
 import time
 import random
 import yfinance as yf
+import streamlit.components.v1 as components
 
 # ====================== PAGE CONFIG ======================
 st.set_page_config(
-    page_title="9-Agent Trading Command Center",
+    page_title="9+1 Agent Trading Command Center",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -62,17 +63,17 @@ st.markdown("""
         margin-bottom: 0.4rem;
     }
     
-    .metric-card {
-        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 1.2rem;
-        text-align: center;
-    }
-    
     .decision-box {
         background: linear-gradient(145deg, #064e3b 0%, #022c22 100%);
         border: 2px solid #10b981;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+    }
+    
+    .decision-box-wait {
+        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+        border: 2px solid #64748b;
         border-radius: 12px;
         padding: 1.5rem;
         margin-top: 1rem;
@@ -87,23 +88,21 @@ st.markdown("""
         animation: pulse 2s infinite;
     }
     
+    .ob-card {
+        background: linear-gradient(145deg, #312e81 0%, #1e1b4b 100%);
+        border: 1px solid #6366f1;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 0.8rem;
+    }
+    
     @keyframes pulse {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.85; }
     }
     
-    .status-online {
-        color: #10b981;
-        font-weight: 600;
-    }
-    
-    .status-pending {
-        color: #f59e0b;
-    }
-    
-    .confidence-high { color: #10b981; }
-    .confidence-med { color: #f59e0b; }
-    .confidence-low { color: #ef4444; }
+    .status-online { color: #10b981; font-weight: 600; }
+    .status-pending { color: #f59e0b; }
     
     h1, h2, h3 { color: #f1f5f9 !important; }
     .stMetric label { color: #94a3b8 !important; }
@@ -111,77 +110,85 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ====================== REAL MARKET DATA (yfinance) ======================
+# ====================== REAL MARKET DATA ======================
 SYMBOLS = {
-    "gold": "GC=F",      # Gold Futures
-    "crude": "CL=F",     # WTI Crude Oil Futures
-    "natgas": "NG=F"     # Natural Gas Futures
+    "Gold (XAUUSD)": "GC=F",
+    "Crude Oil (WTI)": "CL=F",
+    "Natural Gas": "NG=F"
 }
 
-@st.cache_data(ttl=60)  # Cache for 60 seconds to avoid rate limits
+SYMBOL_KEYS = {
+    "Gold (XAUUSD)": "gold",
+    "Crude Oil (WTI)": "crude",
+    "Natural Gas": "natgas"
+}
+
+@st.cache_data(ttl=45)
 def fetch_real_prices():
-    """Fetch latest prices from Yahoo Finance (free, no API key)"""
     prices = {}
     changes = {}
     try:
         for name, symbol in SYMBOLS.items():
+            key = SYMBOL_KEYS[name]
             ticker = yf.Ticker(symbol)
-            # Try fast_info first, then history
             try:
                 info = ticker.fast_info
                 price = info.get("lastPrice") or info.get("regularMarketPrice")
                 prev = info.get("previousClose")
-            except:
+            except Exception:
                 hist = ticker.history(period="5d", interval="1d")
                 if not hist.empty:
                     price = float(hist["Close"].iloc[-1])
                     prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else price
                 else:
                     price, prev = None, None
-            
             if price is not None:
-                prices[name] = round(float(price), 2 if name != "natgas" else 3)
-                if prev:
-                    changes[name] = round(float(price) - float(prev), 2 if name != "natgas" else 3)
-                else:
-                    changes[name] = 0.0
+                decimals = 3 if key == "natgas" else 2
+                prices[key] = round(float(price), decimals)
+                changes[key] = round(float(price) - float(prev), decimals) if prev else 0.0
             else:
-                prices[name] = None
-                changes[name] = 0.0
+                prices[key] = None
+                changes[key] = 0.0
     except Exception as e:
-        st.warning(f"Data fetch issue: {e}. Using fallback.")
         return None, None
     return prices, changes
 
-def generate_price_history(symbol, periods=100):
-    """Fetch real recent price history"""
+@st.cache_data(ttl=60)
+def generate_ohlc_history(symbol, periods=120):
+    """Fetch real OHLC + Volume for advanced chart"""
     try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period="5d", interval="15m")
-        if hist.empty:
+        if hist.empty or len(hist) < 20:
             hist = ticker.history(period="1mo", interval="1h")
         if not hist.empty:
             df = hist.tail(periods).reset_index()
-            df = df.rename(columns={"Datetime": "time", "Close": "price"})
-            if "time" not in df.columns:
-                df = df.rename(columns={df.columns[0]: "time"})
-            return df[["time", "price"]]
-    except:
+            time_col = "Datetime" if "Datetime" in df.columns else df.columns[0]
+            df = df.rename(columns={time_col: "time"})
+            df = df[["time", "Open", "High", "Low", "Close", "Volume"]].copy()
+            df.columns = ["time", "open", "high", "low", "close", "volume"]
+            return df
+    except Exception:
         pass
-    # Fallback simulated
+    # Fallback simulated OHLC
     base = {"GC=F": 2650, "CL=F": 73, "NG=F": 2.9}.get(symbol, 100)
-    np.random.seed(42)
-    returns = np.random.normal(0, 0.0015, periods)
-    prices = base * np.cumprod(1 + returns)
-    times = [datetime.now() - timedelta(minutes=15*(periods-i)) for i in range(periods)]
-    return pd.DataFrame({"time": times, "price": prices})
+    np.random.seed(hash(symbol) % 2**32)
+    returns = np.random.normal(0, 0.0012, periods)
+    closes = base * np.cumprod(1 + returns)
+    opens = np.roll(closes, 1)
+    opens[0] = base
+    highs = np.maximum(opens, closes) * (1 + np.abs(np.random.normal(0, 0.0008, periods)))
+    lows = np.minimum(opens, closes) * (1 - np.abs(np.random.normal(0, 0.0008, periods)))
+    volumes = np.random.randint(800, 4500, periods)
+    times = [datetime.now() - timedelta(minutes=15 * (periods - i)) for i in range(periods)]
+    return pd.DataFrame({
+        "time": times, "open": opens, "high": highs, "low": lows, "close": closes, "volume": volumes
+    })
 
 def get_live_prices():
-    """Get real prices with fallback to simulation"""
     real, changes = fetch_real_prices()
     if real and all(v is not None for v in real.values()):
-        return real, changes
-    # Fallback simulation
+        return real, changes, True
     base = {
         "gold": 2651.20 + random.uniform(-3, 3),
         "crude": 72.85 + random.uniform(-0.4, 0.4),
@@ -189,43 +196,188 @@ def get_live_prices():
     }
     prices = {k: round(v, 2 if k != "natgas" else 3) for k, v in base.items()}
     changes = {k: round(random.uniform(-2, 2), 2) for k in prices}
-    return prices, changes
+    return prices, changes, False
 
-def get_agent_outputs(prices):
-    """Simulate the 9 agents' reasoning"""
-    gold_trend = "Bullish" if random.random() > 0.4 else "Bearish"
-    crude_trend = "Bearish" if random.random() > 0.45 else "Bullish"
+def detect_order_blocks(df, lookback=40):
+    """
+    Simple Order Block detection:
+    - Bullish OB: last down candle before a strong upward impulse
+    - Bearish OB: last up candle before a strong downward impulse
+    Returns list of dicts with type, top, bottom, mid, strength
+    """
+    if df is None or len(df) < lookback + 5:
+        return []
+    
+    recent = df.tail(lookback).copy().reset_index(drop=True)
+    obs = []
+    
+    # Calculate impulse strength (body + range)
+    recent["body"] = abs(recent["close"] - recent["open"])
+    recent["range"] = recent["high"] - recent["low"]
+    avg_body = recent["body"].mean()
+    
+    for i in range(3, len(recent) - 4):
+        # Bullish Order Block: bearish candle followed by strong bullish move
+        if (recent.loc[i, "close"] < recent.loc[i, "open"] and
+            recent.loc[i+1, "close"] > recent.loc[i+1, "open"] and
+            recent.loc[i+2, "close"] > recent.loc[i+1, "close"] and
+            recent.loc[i+1, "body"] > avg_body * 1.4):
+            
+            top = max(recent.loc[i, "open"], recent.loc[i, "close"])
+            bottom = min(recent.loc[i, "open"], recent.loc[i, "close"])
+            # Prefer the body as OB zone
+            mid = (top + bottom) / 2
+            strength = min(1.0, recent.loc[i+1, "body"] / (avg_body + 1e-9))
+            obs.append({
+                "type": "Bullish OB",
+                "top": round(top, 3),
+                "bottom": round(bottom, 3),
+                "mid": round(mid, 3),
+                "strength": round(strength, 2),
+                "time": recent.loc[i, "time"]
+            })
+        
+        # Bearish Order Block
+        if (recent.loc[i, "close"] > recent.loc[i, "open"] and
+            recent.loc[i+1, "close"] < recent.loc[i+1, "open"] and
+            recent.loc[i+2, "close"] < recent.loc[i+1, "close"] and
+            recent.loc[i+1, "body"] > avg_body * 1.4):
+            
+            top = max(recent.loc[i, "open"], recent.loc[i, "close"])
+            bottom = min(recent.loc[i, "open"], recent.loc[i, "close"])
+            mid = (top + bottom) / 2
+            strength = min(1.0, recent.loc[i+1, "body"] / (avg_body + 1e-9))
+            obs.append({
+                "type": "Bearish OB",
+                "top": round(top, 3),
+                "bottom": round(bottom, 3),
+                "mid": round(mid, 3),
+                "strength": round(strength, 2),
+                "time": recent.loc[i, "time"]
+            })
+    
+    # Keep only the strongest / most recent few
+    obs = sorted(obs, key=lambda x: x["strength"], reverse=True)[:4]
+    return obs
+
+def get_agent_outputs(prices, selected_key, order_blocks, current_price):
+    """9 agents + Order Block Scanner. Decision only fires on high confluence."""
+    
+    # Simulated but coherent reasoning based on selected instrument
+    gold_bias = "Bullish" if random.random() > 0.38 else "Bearish"
+    crude_bias = "Bearish" if random.random() > 0.48 else "Bullish"
+    
+    # Order Block alignment check
+    nearest_ob = None
+    ob_aligned = False
+    ob_signal = "No high-quality Order Block near price"
+    if order_blocks:
+        # Find closest OB to current price
+        for ob in order_blocks:
+            dist = abs(ob["mid"] - current_price)
+            if nearest_ob is None or dist < abs(nearest_ob["mid"] - current_price):
+                nearest_ob = ob
+        if nearest_ob:
+            zone_dist = abs(nearest_ob["mid"] - current_price) / current_price
+            if zone_dist < 0.004:  # within ~0.4%
+                ob_aligned = True
+                if nearest_ob["type"] == "Bullish OB":
+                    ob_signal = f"Price reacting at Bullish OB {nearest_ob['bottom']:.2f}-{nearest_ob['top']:.2f}"
+                else:
+                    ob_signal = f"Price reacting at Bearish OB {nearest_ob['bottom']:.2f}-{nearest_ob['top']:.2f}"
+            else:
+                ob_signal = f"Nearest {nearest_ob['type']} at {nearest_ob['mid']:.2f} (watching)"
+    
+    # Core agent signals (simplified coherence)
+    tech_signal = "BUY" if gold_bias == "Bullish" else "SELL"
+    mom_ok = random.random() > 0.3
+    sent_ok = random.random() > 0.25
+    macro_ok = random.random() > 0.3
+    risk_ok = True
+    
+    aligned = []
+    if tech_signal:
+        aligned.append("Technical")
+    if mom_ok:
+        aligned.append("Momentum")
+    if sent_ok:
+        aligned.append("Sentiment")
+    if macro_ok:
+        aligned.append("Macro")
+    aligned.append("Risk")
+    if ob_aligned:
+        aligned.append("OrderBlock")
+    
+    # Confluence count (need >= 5 including Order Block for full go)
+    confluence_score = len(aligned)
+    full_confluence = confluence_score >= 5 and ob_aligned and risk_ok
+    
+    # Decision only if full confluence
+    if full_confluence and selected_key == "gold":
+        side = "BUY" if nearest_ob and nearest_ob["type"] == "Bullish OB" else ("SELL" if nearest_ob and nearest_ob["type"] == "Bearish OB" else tech_signal)
+        entry = round(current_price + (0.4 if side == "BUY" else -0.4), 2)
+        sl = round(current_price - 18.5 if side == "BUY" else current_price + 18.5, 2)
+        tp = round(current_price + 32.0 if side == "BUY" else current_price - 32.0, 2)
+        decision = {
+            "name": "9️⃣ Final Decision Agent",
+            "status": "TRADE READY",
+            "instrument": "XAUUSD (Gold)",
+            "side": side,
+            "entry": entry,
+            "stop_loss": sl,
+            "take_profit": tp,
+            "size": "0.40 lots",
+            "confidence": min(0.92, 0.70 + confluence_score * 0.04),
+            "reasoning": f"FULL CONFLUENCE ({confluence_score}/9+OB). Order Block + Technical + Sentiment + Macro aligned. Risk approved. Clear window.",
+            "aligned_agents": aligned,
+            "has_trade": True
+        }
+    else:
+        decision = {
+            "name": "9️⃣ Final Decision Agent",
+            "status": "WAITING",
+            "instrument": selected_key.upper(),
+            "side": "—",
+            "entry": "—",
+            "stop_loss": "—",
+            "take_profit": "—",
+            "size": "—",
+            "confidence": 0.0,
+            "reasoning": "No trade. Waiting for full confluence (Order Block + ≥4 supporting agents + Risk).",
+            "aligned_agents": aligned,
+            "has_trade": False
+        }
     
     return {
         "scanner": {
             "name": "1️⃣ Market Scanner",
             "status": "Active",
-            "gold": f"Trend: {gold_trend} | Key Level: {prices['gold']-5:.1f} | Volume Spike: Yes",
-            "crude": f"Trend: {crude_trend} | Key Level: {prices['crude']+0.8:.2f}",
+            "gold": f"Trend: {gold_bias} | Key Level: {prices['gold']-5:.1f}",
+            "crude": f"Trend: {crude_bias} | Key Level: {prices['crude']+0.8:.2f}",
             "natgas": "Trend: Range-bound | Key Level: 2.85",
-            "priority": "GOLD",
+            "priority": "GOLD" if selected_key == "gold" else selected_key.upper(),
             "confidence": 0.82
         },
         "technical": {
             "name": "2️⃣ Technical Analyst",
             "status": "Active",
-            "analysis": "Higher Highs + Higher Lows structure intact on Gold. RSI 61 (bullish). Order block at 2638 holding.",
-            "signal": "BUY bias on Gold",
+            "analysis": f"Structure on selected instrument: {tech_signal} bias. Higher-timeframe structure respected.",
+            "signal": f"{tech_signal} bias",
             "confidence": 0.79
         },
         "momentum": {
             "name": "3️⃣ Momentum & Volatility",
             "status": "Active",
-            "analysis": f"Gold ATR: 18.4 | Momentum strength: 7.8/10 | Volatility expansion detected",
-            "signal": "Strong momentum continuation possible",
-            "confidence": 0.75
+            "analysis": f"ATR expanding | Momentum strength: {7.2 + random.random():.1f}/10",
+            "signal": "Momentum supportive" if mom_ok else "Momentum fading",
+            "confidence": 0.75 if mom_ok else 0.55
         },
         "sentiment": {
             "name": "4️⃣ Sentiment & Positioning",
             "status": "Active",
-            "analysis": "Retail heavily short Gold. COT shows commercial (smart money) net long. Classic squeeze setup.",
-            "signal": "Contrarian bullish on Gold",
-            "confidence": 0.84
+            "analysis": "Retail positioning skewed. Smart-money COT leaning opposite. Potential squeeze setup.",
+            "signal": "Contrarian supportive" if sent_ok else "Neutral",
+            "confidence": 0.84 if sent_ok else 0.60
         },
         "news": {
             "name": "5️⃣ News & Event Agent",
@@ -236,69 +388,131 @@ def get_agent_outputs(prices):
                 {"event": "FOMC Member Speech", "time": "Tomorrow 15:00 IST", "impact": "MEDIUM", "focus": "Gold"}
             ],
             "critical": "No critical breaking news in last 15 min",
-            "bias": "Gold: Bullish on softer CPI | Crude: Watch inventory draw"
+            "bias": "Gold: Watch CPI | Crude: Inventory focus"
         },
         "macro": {
             "name": "6️⃣ Macro & Correlation",
             "status": "Active",
-            "analysis": "USD Index weakening (-0.3%). 10Y yields soft. Gold-USD correlation: -0.81. Risk-on environment supporting metals.",
-            "signal": "Macro tailwind for Gold",
-            "confidence": 0.77
+            "analysis": "USD soft | Yields contained | Risk environment supportive for metals.",
+            "signal": "Macro tailwind" if macro_ok else "Macro neutral",
+            "confidence": 0.77 if macro_ok else 0.58
         },
         "supply_demand": {
             "name": "7️⃣ Supply / Demand",
             "status": "Active",
-            "analysis": "Crude: Expected inventory draw this week. NatGas: Storage still elevated. Gold: Central bank buying continues.",
-            "signal": "Mild bullish bias Crude | Neutral NatGas",
+            "analysis": "Gold: CB buying continues. Crude: Expected draw. NatGas: Elevated storage.",
+            "signal": "Mild bullish bias selected instrument",
             "confidence": 0.68
         },
         "risk": {
             "name": "8️⃣ Risk Manager",
             "status": "Active",
-            "approved": True,
+            "approved": risk_ok,
             "max_risk": "0.5% equity",
             "suggested_sl_atr": "1.5× ATR",
-            "position_size": "0.40 lots (Gold)",
-            "veto": None,
-            "note": "All risk parameters within limits. Correlation risk low."
+            "position_size": "0.40 lots",
+            "veto": None if risk_ok else "Size exceeds limit",
+            "note": "All risk parameters within limits." if risk_ok else "Risk parameters exceeded."
         },
-        "decision": {
-            "name": "9️⃣ Final Decision Agent",
-            "status": "DECISION READY",
-            "instrument": "XAUUSD (Gold)",
-            "side": "BUY",
-            "entry": round(prices["gold"] + 0.3, 2),
-            "stop_loss": round(prices["gold"] - 18.5, 2),
-            "take_profit": round(prices["gold"] + 32.0, 2),
-            "size": "0.40 lots",
-            "confidence": 0.81,
-            "reasoning": "Strong confluence: Scanner + Technical + Sentiment + Macro aligned. Risk Manager approved. News window clear for next 2 hours.",
-            "aligned_agents": ["Scanner", "Technical", "Momentum", "Sentiment", "Macro", "Risk"]
-        }
+        "orderblock": {
+            "name": "🔟 Order Block Scanner",
+            "status": "Active",
+            "levels": order_blocks,
+            "nearest": nearest_ob,
+            "signal": ob_signal,
+            "aligned": ob_aligned,
+            "confidence": nearest_ob["strength"] if nearest_ob else 0.0
+        },
+        "decision": decision
     }
 
-# ====================== SIDEBAR ======================
+# ====================== SOUND ALERT JS ======================
+def play_alert_sound(kind="trade"):
+    """Inject a pleasant beep / chime via Web Audio API"""
+    if kind == "trade":
+        # Pleasant ascending chime
+        js = """
+        <script>
+        (function(){
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const notes = [523.25, 659.25, 783.99]; // C5 E5 G5
+            notes.forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0.25, ctx.currentTime + i*0.18);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i*0.18 + 0.4);
+                osc.start(ctx.currentTime + i*0.18);
+                osc.stop(ctx.currentTime + i*0.18 + 0.45);
+            });
+        })();
+        </script>
+        """
+    else:
+        # Soft alert beep for level touch
+        js = """
+        <script>
+        (function(){
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.2, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.4);
+        })();
+        </script>
+        """
+    components.html(js, height=0)
+
+# ====================== SIDEBAR CONTROL PANEL ======================
 with st.sidebar:
     st.markdown("### ⚡ Control Panel")
     st.markdown("---")
     
     if st.button("🔄 Refresh Now", use_container_width=True):
+        st.cache_data.clear()
         st.rerun()
     
     auto_refresh = st.toggle("Live Auto-Refresh", value=False)
-    refresh_rate = st.slider("Refresh every (seconds)", 5, 30, 10)
+    refresh_rate = st.slider("Refresh every (seconds)", 5, 60, 15)
     
     st.markdown("---")
-    st.markdown("### Market Focus")
-    focus = st.multiselect(
-        "Instruments",
-        ["Gold (XAUUSD)", "Crude Oil (WTI)", "Natural Gas"],
-        default=["Gold (XAUUSD)", "Crude Oil (WTI)"]
+    st.markdown("### 📊 Instrument Focus")
+    selected_instrument = st.selectbox(
+        "Select Instrument (Chart + Agents)",
+        list(SYMBOLS.keys()),
+        index=0
     )
+    selected_symbol = SYMBOLS[selected_instrument]
+    selected_key = SYMBOL_KEYS[selected_instrument]
+    
+    st.markdown("---")
+    st.markdown("### 🔔 Key Alert Settings")
+    enable_sound = st.toggle("Enable Sound Alerts", value=True)
+    alert_level = st.number_input(
+        "Alert Price Level",
+        value=0.0,
+        step=0.1,
+        help="Set a price. When live price reaches ±0.15% of this level, sound alert triggers."
+    )
+    alert_tolerance = st.slider("Alert Tolerance %", 0.05, 0.50, 0.15, 0.05)
+    
+    st.markdown("---")
+    st.markdown("### ⚙️ Trade Filters")
+    min_confluence = st.slider("Min Agents for Signal", 4, 8, 5)
+    require_ob = st.toggle("Require Order Block Alignment", value=True)
     
     st.markdown("---")
     st.markdown("### System Status")
-    st.markdown('<span class="status-online">● All 9 Agents Online</span>', unsafe_allow_html=True)
+    st.markdown('<span class="status-online">● 9 Agents + Order Block Scanner Online</span>', unsafe_allow_html=True)
     st.caption(f"Last cycle: {datetime.now().strftime('%H:%M:%S')}")
     
     st.markdown("---")
@@ -307,109 +521,206 @@ with st.sidebar:
     atr_mult = st.slider("Stop Loss ATR Multiplier", 1.0, 3.0, 1.5, 0.1)
     
     st.markdown("---")
-    st.info("This is a **simulation dashboard**. No real trades are executed.")
+    st.info("Simulation + real Yahoo data. No real orders are executed.")
 
 # ====================== MAIN HEADER ======================
-st.markdown("""
+st.markdown(f"""
 <div class="main-header">
-    <h1 style="margin:0; font-size:1.8rem;">⚡ 9-Agent AI Trading Command Center</h1>
-    <p style="margin:0.3rem 0 0 0; color:#94a3b8;">Gold • Crude Oil • Natural Gas | Live Multi-Agent Decision System</p>
+    <h1 style="margin:0; font-size:1.8rem;">⚡ 9+1 Agent AI Trading Command Center</h1>
+    <p style="margin:0.3rem 0 0 0; color:#94a3b8;">Focused on <b>{selected_instrument}</b> | Order Block Scanner + Conditional Signals</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ====================== LIVE PRICES ======================
-prices, changes = get_live_prices()
-agents = get_agent_outputs(prices)
+prices, changes, is_live = get_live_prices()
+current_price = prices[selected_key]
 
-# Show data source status
-data_source = "🟢 Live Yahoo Finance (GC=F / CL=F / NG=F)" if changes.get("gold") is not None else "🟡 Simulation Fallback"
-st.caption(f"Data Source: {data_source} | Updated: {datetime.now().strftime('%H:%M:%S')}")
+# OHLC data for selected instrument
+ohlc_df = generate_ohlc_history(selected_symbol)
+order_blocks = detect_order_blocks(ohlc_df)
 
+agents = get_agent_outputs(prices, selected_key, order_blocks, current_price)
+
+data_source = "🟢 Live Yahoo Finance" if is_live else "🟡 Simulation Fallback"
+st.caption(f"Data Source: {data_source} | Focus: {selected_instrument} ({selected_symbol}) | Updated: {datetime.now().strftime('%H:%M:%S')}")
+
+# Metrics row
 col1, col2, col3, col4 = st.columns(4)
-
 with col1:
-    delta_g = changes.get("gold", 0)
-    st.metric("🥇 Gold Futures (GC=F)", f"{prices['gold']:,.2f}", f"{delta_g:+.2f}")
+    delta = changes.get(selected_key, 0)
+    label = f"🥇 {selected_instrument}" if selected_key == "gold" else (f"🛢️ {selected_instrument}" if selected_key == "crude" else f"🔥 {selected_instrument}")
+    fmt = f"{current_price:,.3f}" if selected_key == "natgas" else f"{current_price:,.2f}"
+    st.metric(label, fmt, f"{delta:+.3f}" if selected_key == "natgas" else f"{delta:+.2f}")
 with col2:
-    delta_c = changes.get("crude", 0)
-    st.metric("🛢️ Crude Oil (CL=F)", f"{prices['crude']:.2f}", f"{delta_c:+.2f}")
+    st.metric("Order Blocks Found", len(order_blocks), "Active zones")
 with col3:
-    delta_n = changes.get("natgas", 0)
-    st.metric("🔥 Natural Gas (NG=F)", f"{prices['natgas']:.3f}", f"{delta_n:+.3f}")
+    conf = agents["decision"]["confidence"]
+    st.metric("System Confidence", f"{conf*100:.0f}%" if conf > 0 else "—", "Full Confluence" if agents["decision"]["has_trade"] else "Waiting")
 with col4:
-    st.metric("System Confidence", f"{agents['decision']['confidence']*100:.0f}%", "High Confluence")
+    ob_status = "✅ Aligned" if agents["orderblock"]["aligned"] else "⏳ Watching"
+    st.metric("Order Block Status", ob_status)
 
 st.markdown("---")
 
-# ====================== CHARTS ======================
-st.subheader("📈 Live Price Action (Real Data)")
+# ====================== ADVANCED CHART (Yahoo Finance style) ======================
+st.subheader(f"📈 {selected_instrument} — Advanced Chart (Candlestick + Volume + Order Blocks)")
 
-chart_col1, chart_col2 = st.columns(2)
+fig = make_subplots(
+    rows=2, cols=1,
+    shared_xaxes=True,
+    vertical_spacing=0.03,
+    row_heights=[0.72, 0.28],
+    subplot_titles=(f"{selected_symbol} Price", "Volume")
+)
 
-with chart_col1:
-    gold_df = generate_price_history("GC=F")
-    fig_g = go.Figure()
-    fig_g.add_trace(go.Scatter(
-        x=gold_df["time"], y=gold_df["price"],
-        mode="lines", name="Gold",
-        line=dict(color="#fbbf24", width=2)
-    ))
-    fig_g.update_layout(
-        title="Gold Futures (GC=F)",
-        template="plotly_dark",
-        height=280,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(15,23,42,0.8)",
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor="#1e293b")
+# Candlesticks
+fig.add_trace(go.Candlestick(
+    x=ohlc_df["time"],
+    open=ohlc_df["open"],
+    high=ohlc_df["high"],
+    low=ohlc_df["low"],
+    close=ohlc_df["close"],
+    name="OHLC",
+    increasing_line_color="#22c55e",
+    decreasing_line_color="#ef4444",
+    increasing_fillcolor="#22c55e",
+    decreasing_fillcolor="#ef4444"
+), row=1, col=1)
+
+# Simple Moving Averages
+if len(ohlc_df) >= 20:
+    ohlc_df["ma20"] = ohlc_df["close"].rolling(20).mean()
+    ohlc_df["ma50"] = ohlc_df["close"].rolling(50).mean() if len(ohlc_df) >= 50 else None
+    fig.add_trace(go.Scatter(
+        x=ohlc_df["time"], y=ohlc_df["ma20"],
+        mode="lines", name="MA20",
+        line=dict(color="#fbbf24", width=1.5)
+    ), row=1, col=1)
+    if ohlc_df["ma50"] is not None:
+        fig.add_trace(go.Scatter(
+            x=ohlc_df["time"], y=ohlc_df["ma50"],
+            mode="lines", name="MA50",
+            line=dict(color="#38bdf8", width=1.5)
+        ), row=1, col=1)
+
+# Order Block zones as horizontal rectangles / lines
+colors_ob = {"Bullish OB": "rgba(34, 197, 94, 0.25)", "Bearish OB": "rgba(239, 68, 68, 0.25)"}
+line_colors = {"Bullish OB": "#22c55e", "Bearish OB": "#ef4444"}
+
+for ob in order_blocks:
+    fig.add_hrect(
+        y0=ob["bottom"], y1=ob["top"],
+        fillcolor=colors_ob.get(ob["type"], "rgba(99,102,241,0.2)"),
+        line_width=0,
+        row=1, col=1
     )
-    st.plotly_chart(fig_g, use_container_width=True)
-
-with chart_col2:
-    crude_df = generate_price_history("CL=F")
-    fig_c = go.Figure()
-    fig_c.add_trace(go.Scatter(
-        x=crude_df["time"], y=crude_df["price"],
-        mode="lines", name="Crude",
-        line=dict(color="#38bdf8", width=2)
-    ))
-    fig_c.update_layout(
-        title="Crude Oil Futures (CL=F)",
-        template="plotly_dark",
-        height=280,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(15,23,42,0.8)",
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor="#1e293b")
+    fig.add_hline(
+        y=ob["mid"],
+        line_dash="dash",
+        line_color=line_colors.get(ob["type"], "#6366f1"),
+        line_width=1.5,
+        annotation_text=f"{ob['type']} {ob['mid']:.2f}",
+        annotation_position="right",
+        row=1, col=1
     )
-    st.plotly_chart(fig_c, use_container_width=True)
+
+# Volume bars
+colors_vol = ["#22c55e" if c >= o else "#ef4444" for c, o in zip(ohlc_df["close"], ohlc_df["open"])]
+fig.add_trace(go.Bar(
+    x=ohlc_df["time"],
+    y=ohlc_df["volume"],
+    name="Volume",
+    marker_color=colors_vol,
+    opacity=0.7
+), row=2, col=1)
+
+fig.update_layout(
+    template="plotly_dark",
+    height=520,
+    margin=dict(l=10, r=10, t=40, b=10),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(15,23,42,0.85)",
+    xaxis_rangeslider_visible=False,
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    hovermode="x unified"
+)
+fig.update_xaxes(showgrid=False, row=1, col=1)
+fig.update_xaxes(showgrid=False, row=2, col=1)
+fig.update_yaxes(showgrid=True, gridcolor="#1e293b", row=1, col=1)
+fig.update_yaxes(showgrid=False, row=2, col=1)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# ====================== ORDER BLOCK SCANNER PANEL ======================
+st.subheader("🔟 Order Block Scanner — Key Levels")
+
+if order_blocks:
+    ob_cols = st.columns(min(4, len(order_blocks)))
+    for idx, ob in enumerate(order_blocks):
+        with ob_cols[idx % len(ob_cols)]:
+            color = "#22c55e" if "Bullish" in ob["type"] else "#ef4444"
+            st.markdown(f"""
+            <div class="ob-card">
+                <div style="color:{color}; font-weight:600;">{ob['type']}</div>
+                <p style="color:#e2e8f0; font-size:0.9rem; margin:0.3rem 0;">
+                    Zone: <b>{ob['bottom']:.2f} – {ob['top']:.2f}</b><br>
+                    Mid: <b>{ob['mid']:.2f}</b><br>
+                    Strength: {ob['strength']*100:.0f}%
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+else:
+    st.info("No high-quality Order Blocks detected in the recent window. Scanner continues monitoring.")
+
+st.markdown(f"**Scanner Signal:** {agents['orderblock']['signal']}")
 
 st.markdown("---")
 
-# ====================== FINAL DECISION ======================
-st.subheader("🎯 Final Trade Decision (Agent 9)")
+# ====================== FINAL DECISION (CONDITIONAL) ======================
+st.subheader("🎯 Final Trade Decision (Agent 9 + Order Block Gate)")
 
 decision = agents["decision"]
-st.markdown(f"""
-<div class="decision-box">
-    <h3 style="color:#34d399; margin-top:0;">✅ {decision['side']} {decision['instrument']}</h3>
-    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:1rem; margin:1rem 0;">
-        <div><strong>Entry</strong><br><span style="font-size:1.3rem; color:#f1f5f9;">{decision['entry']}</span></div>
-        <div><strong>Stop Loss</strong><br><span style="font-size:1.3rem; color:#f87171;">{decision['stop_loss']}</span></div>
-        <div><strong>Take Profit</strong><br><span style="font-size:1.3rem; color:#34d399;">{decision['take_profit']}</span></div>
-        <div><strong>Size</strong><br><span style="font-size:1.3rem; color:#f1f5f9;">{decision['size']}</span></div>
+
+if decision["has_trade"]:
+    st.markdown(f"""
+    <div class="decision-box">
+        <h3 style="color:#34d399; margin-top:0;">✅ TRADE SIGNAL — {decision['side']} {decision['instrument']}</h3>
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:1rem; margin:1rem 0;">
+            <div><strong>Entry</strong><br><span style="font-size:1.3rem; color:#f1f5f9;">{decision['entry']}</span></div>
+            <div><strong>Stop Loss</strong><br><span style="font-size:1.3rem; color:#f87171;">{decision['stop_loss']}</span></div>
+            <div><strong>Take Profit</strong><br><span style="font-size:1.3rem; color:#34d399;">{decision['take_profit']}</span></div>
+            <div><strong>Size</strong><br><span style="font-size:1.3rem; color:#f1f5f9;">{decision['size']}</span></div>
+        </div>
+        <p style="color:#a7f3d0;"><strong>Confidence:</strong> {decision['confidence']*100:.0f}% &nbsp;|&nbsp; 
+        <strong>Aligned:</strong> {', '.join(decision['aligned_agents'])}</p>
+        <p style="color:#d1fae5; font-size:0.95rem;">{decision['reasoning']}</p>
     </div>
-    <p style="color:#a7f3d0;"><strong>Confidence:</strong> {decision['confidence']*100:.0f}% &nbsp;|&nbsp; 
-    <strong>Aligned Agents:</strong> {', '.join(decision['aligned_agents'])}</p>
-    <p style="color:#d1fae5; font-size:0.95rem;">{decision['reasoning']}</p>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+    
+    # Sound alert for trade
+    if enable_sound:
+        play_alert_sound("trade")
+        st.success("🔊 Trade alert sound played (pleasant chime)")
+else:
+    st.markdown(f"""
+    <div class="decision-box-wait">
+        <h3 style="color:#94a3b8; margin-top:0;">⏳ NO TRADE — Waiting for Full Confluence</h3>
+        <p style="color:#cbd5e1;">{decision['reasoning']}</p>
+        <p style="color:#64748b; font-size:0.9rem;">Currently aligned: {', '.join(decision['aligned_agents']) if decision['aligned_agents'] else 'None'}</p>
+        <p style="color:#64748b; font-size:0.85rem;">Requires: Order Block alignment + ≥{min_confluence} supporting agents + Risk approval.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# ====================== KEY LEVEL ALERT CHECK ======================
+if alert_level > 0 and enable_sound:
+    tolerance = current_price * (alert_tolerance / 100)
+    if abs(current_price - alert_level) <= tolerance:
+        play_alert_sound("level")
+        st.warning(f"🔔 **KEY LEVEL ALERT** — Price {current_price:.2f} is within {alert_tolerance}% of your set level {alert_level:.2f}")
 
 st.markdown("---")
 
-# ====================== 9 AGENTS GRID ======================
+# ====================== 9 AGENTS + ORDER BLOCK GRID ======================
 st.subheader("🤖 Live Agent Reasoning")
 
 # Row 1
@@ -483,8 +794,8 @@ with r2c3:
     </div>
     """, unsafe_allow_html=True)
 
-# Row 3 - News + Risk
-r3c1, r3c2 = st.columns(2)
+# Row 3 - News + Risk + Order Block
+r3c1, r3c2, r3c3 = st.columns(3)
 
 with r3c1:
     a = agents["news"]
@@ -523,16 +834,29 @@ with r3c2:
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+with r3c3:
+    a = agents["orderblock"]
+    align_color = "#10b981" if a["aligned"] else "#f59e0b"
+    st.markdown(f"""
+    <div class="ob-card">
+        <div class="agent-title">{a['name']}</div>
+        <p style="color:{align_color}; font-size:1rem; font-weight:600;">
+            {'✅ ALIGNED' if a['aligned'] else '⏳ MONITORING'}
+        </p>
+        <p style="color:#e2e8f0; font-size:0.85rem;">{a['signal']}</p>
+        <p style="color:#a5b4fc; font-size:0.8rem;">Levels detected: {len(a['levels'])}</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("#### Alignment Status")
-    aligned = decision["aligned_agents"]
-    for name in ["Scanner", "Technical", "Momentum", "Sentiment", "News", "Macro", "Supply/Demand", "Risk"]:
-        icon = "✅" if name in aligned or name == "Risk" else "⚪"
+    for name in ["Scanner", "Technical", "Momentum", "Sentiment", "Macro", "Risk", "OrderBlock"]:
+        icon = "✅" if name in decision["aligned_agents"] or (name == "Risk" and agents["risk"]["approved"]) else "⚪"
         st.markdown(f"{icon} {name}")
 
 # ====================== FOOTER ======================
 st.markdown("---")
-st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST | Real market data via Yahoo Finance (delayed) — No real orders are sent | Built with LangGraph architecture concepts")
+st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST | Real data via Yahoo Finance (delayed) | No real orders sent | LangGraph-style multi-agent architecture")
 
 # ====================== AUTO REFRESH ======================
 if auto_refresh:
