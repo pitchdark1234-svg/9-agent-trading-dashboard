@@ -1,7 +1,7 @@
 """
-9+1 Agent AI Trading Command Center
+Bloomberg-style Multi-Agent Trading Terminal
 Gold | Crude Oil | Natural Gas | Bitcoin
-Live dashboard with Order Block Scanner, Yahoo-style charts, conditional signals & sound alerts
+RSI · MACD · Volume Profile · EMA · Order Block · Institutional Quant
 """
 
 import streamlit as st
@@ -17,84 +17,212 @@ import streamlit.components.v1 as components
 
 # ====================== PAGE CONFIG ======================
 st.set_page_config(
-    page_title="9+1 Agent Trading Command Center",
-    page_icon="⚡",
+    page_title="BBG-Style Trading Terminal",
+    page_icon="⬛",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ====================== CUSTOM CSS ======================
+# ====================== BLOOMBERG TERMINAL CSS ======================
 _CUSTOM_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
+
+/* === CORE BLOOMBERG LOOK === */
 .stApp {
-    background: linear-gradient(135deg, #0a0e17 0%, #111827 50%, #0f172a 100%);
-    font-family: 'Inter', sans-serif;
+    background: #000000 !important;
+    font-family: 'Roboto Mono', 'Courier New', monospace !important;
+    color: #e0e0e0 !important;
 }
-.main-header {
-    background: linear-gradient(90deg, #1e3a5f 0%, #0f172a 100%);
-    padding: 1.2rem 2rem;
-    border-radius: 12px;
-    border: 1px solid #1e40af;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 4px 20px rgba(30, 64, 175, 0.3);
+.main .block-container {
+    padding-top: 0.8rem !important;
+    padding-bottom: 1rem !important;
+    max-width: 100% !important;
+}
+section[data-testid="stSidebar"] {
+    background: #0a0a0a !important;
+    border-right: 1px solid #333 !important;
+}
+section[data-testid="stSidebar"] * {
+    font-family: 'Roboto Mono', monospace !important;
+    color: #ccc !important;
+}
+
+/* Headers */
+h1, h2, h3, h4 {
+    font-family: 'Roboto Mono', monospace !important;
+    color: #ff6600 !important;
+    letter-spacing: 0.5px !important;
+    font-weight: 600 !important;
+}
+.stMarkdown p, .stCaption {
+    font-family: 'Roboto Mono', monospace !important;
+}
+
+/* Metrics — Bloomberg quote style */
+div[data-testid="stMetric"] {
+    background: #0d0d0d !important;
+    border: 1px solid #222 !important;
+    padding: 8px 12px !important;
+    border-radius: 0 !important;
+}
+div[data-testid="stMetric"] label {
+    color: #888 !important;
+    font-size: 0.7rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: #ffffff !important;
+    font-family: 'Roboto Mono', monospace !important;
+    font-weight: 600 !important;
+    font-size: 1.25rem !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+    font-family: 'Roboto Mono', monospace !important;
+    font-size: 0.85rem !important;
+}
+
+/* Buttons */
+.stButton > button {
+    background: #1a1a1a !important;
+    color: #ff6600 !important;
+    border: 1px solid #ff6600 !important;
+    border-radius: 0 !important;
+    font-family: 'Roboto Mono', monospace !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+}
+.stButton > button:hover {
+    background: #ff6600 !important;
+    color: #000 !important;
+}
+
+/* Inputs */
+.stSelectbox, .stNumberInput, .stSlider, .stToggle {
+    font-family: 'Roboto Mono', monospace !important;
+}
+
+/* === BLOOMBERG COMPONENTS === */
+.bbg-header {
+    background: #000;
+    border-bottom: 2px solid #ff6600;
+    padding: 6px 14px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.bbg-header-title {
+    color: #ff6600;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    font-family: 'Roboto Mono', monospace;
+}
+.bbg-header-sub {
+    color: #666;
+    font-size: 0.7rem;
+    letter-spacing: 1px;
+}
+.bbg-ticker-bar {
+    background: #0a0a0a;
+    border: 1px solid #222;
+    padding: 6px 12px;
+    margin-bottom: 8px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.8rem;
+    color: #aaa;
+    white-space: nowrap;
+    overflow-x: auto;
+}
+.bbg-panel {
+    background: #0a0a0a;
+    border: 1px solid #222;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+.bbg-panel-title {
+    color: #ff6600;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid #222;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+    font-family: 'Roboto Mono', monospace;
 }
 .agent-card {
-    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-    border: 1px solid #334155;
-    border-radius: 12px;
-    padding: 1rem;
-    margin-bottom: 0.8rem;
-    transition: all 0.3s ease;
+    background: #0a0a0a;
+    border: 1px solid #1a1a1a;
+    border-left: 3px solid #333;
+    border-radius: 0;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.8rem;
 }
 .agent-card:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+    border-left-color: #ff6600;
+    background: #0f0f0f;
 }
 .agent-title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #60a5fa;
-    margin-bottom: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #ff6600;
+    margin-bottom: 4px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
 }
 .decision-box {
-    background: linear-gradient(145deg, #064e3b 0%, #022c22 100%);
-    border: 2px solid #10b981;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-top: 1rem;
+    background: #001a0d;
+    border: 1px solid #00aa44;
+    border-left: 4px solid #00cc55;
+    border-radius: 0;
+    padding: 12px 14px;
+    margin-top: 6px;
+    font-family: 'Roboto Mono', monospace;
 }
 .decision-box-wait {
-    background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
-    border: 2px solid #64748b;
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-top: 1rem;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    border-left: 4px solid #666;
+    border-radius: 0;
+    padding: 12px 14px;
+    margin-top: 6px;
+    font-family: 'Roboto Mono', monospace;
 }
 .news-alert {
-    background: linear-gradient(145deg, #7f1d1d 0%, #450a0a 100%);
-    border: 1px solid #ef4444;
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 0.8rem;
-    animation: pulse 2s infinite;
+    background: #1a0505;
+    border: 1px solid #440000;
+    border-left: 3px solid #cc0000;
+    border-radius: 0;
+    padding: 6px 10px;
+    margin-bottom: 4px;
+    font-size: 0.75rem;
+    font-family: 'Roboto Mono', monospace;
 }
 .ob-card {
-    background: linear-gradient(145deg, #312e81 0%, #1e1b4b 100%);
-    border: 1px solid #6366f1;
-    border-radius: 12px;
-    padding: 1rem;
-    margin-bottom: 0.8rem;
+    background: #0a0a12;
+    border: 1px solid #1a1a2e;
+    border-left: 3px solid #ff6600;
+    border-radius: 0;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    font-family: 'Roboto Mono', monospace;
 }
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.85; }
-}
-.status-online { color: #10b981; font-weight: 600; }
-.status-pending { color: #f59e0b; }
-h1, h2, h3 { color: #f1f5f9 !important; }
-.stMetric label { color: #94a3b8 !important; }
-.stMetric value { color: #f1f5f9 !important; }
+.status-online { color: #00cc55; font-weight: 600; }
+.status-pending { color: #ff9900; }
+.pos { color: #00cc55 !important; }
+.neg { color: #ff3333 !important; }
+.amber { color: #ff6600 !important; }
+
+/* Hide Streamlit branding for cleaner terminal look */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
 </style>
 """
 st.markdown(_CUSTOM_CSS, unsafe_allow_html=True)
@@ -882,11 +1010,18 @@ with st.sidebar:
     st.markdown("---")
     st.info("Simulation + real Yahoo data. No real orders are executed.")
 
-# ====================== MAIN HEADER ======================
+# ====================== BLOOMBERG-STYLE HEADER ======================
+now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 st.markdown(f"""
-<div class="main-header">
-    <h1 style="margin:0; font-size:1.8rem;">⚡ 9+1 Agent AI Trading Command Center</h1>
-    <p style="margin:0.3rem 0 0 0; color:#94a3b8;">Focused on <b>{selected_instrument}</b> | RSI · MACD · Volume Profile · EMA · Order Block</p>
+<div class="bbg-header">
+    <div>
+        <span class="bbg-header-title">TERMINAL</span>
+        <span style="color:#444; margin:0 10px;">|</span>
+        <span style="color:#ccc; font-size:0.85rem; font-family:'Roboto Mono',monospace;">{selected_instrument}</span>
+        <span style="color:#444; margin:0 8px;">|</span>
+        <span style="color:#666; font-size:0.7rem;">RSI · MACD · VOL PROF · EMA · OB · QUANT</span>
+    </div>
+    <div class="bbg-header-sub">{now_str} IST</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -900,36 +1035,51 @@ order_blocks = detect_order_blocks(ohlc_df)
 
 agents = get_agent_outputs(prices, selected_key, order_blocks, current_price, ohlc_df)
 
-data_source = "🟢 Live Yahoo Finance" if is_live else "🟡 Simulation Fallback"
-st.caption(f"Data Source: {data_source} | Focus: {selected_instrument} ({selected_symbol}) | Updated: {datetime.now().strftime('%H:%M:%S')}")
+data_source = "LIVE" if is_live else "SIM"
+delta = changes.get(selected_key, 0)
+delta_pct = (delta / current_price * 100) if current_price else 0
+delta_cls = "pos" if delta >= 0 else "neg"
+fmt_price = f"{current_price:,.3f}" if selected_key == "natgas" else f"{current_price:,.2f}"
+fmt_delta = f"{delta:+.3f}" if selected_key == "natgas" else f"{delta:+.2f}"
 
-# Metrics row
-col1, col2, col3, col4 = st.columns(4)
+# Bloomberg-style ticker quote strip
+st.markdown(f"""
+<div class="bbg-ticker-bar">
+    <span style="color:#ff6600; font-weight:700;">{selected_symbol}</span>
+    &nbsp;&nbsp;
+    <span style="color:#fff; font-weight:700; font-size:1.05rem;">{fmt_price}</span>
+    &nbsp;
+    <span class="{delta_cls}">{fmt_delta} ({delta_pct:+.2f}%)</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    SRC: <span style="color:#aaa;">{data_source}</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    OB: <span style="color:{'#00cc55' if agents['orderblock']['aligned'] else '#888'};">{'ALIGNED' if agents['orderblock']['aligned'] else 'WATCH'}</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    CONF: <span style="color:#ff6600;">{agents['decision']['confidence']*100:.0f}%</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    QUANT: <span style="color:#ccc;">{agents.get('quant_model', {}).get('score', 0):+.2f}</span>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    VOL: <span style="color:#aaa;">{agents.get('quant_model', {}).get('vol_regime', '—')}</span>
+</div>
+""", unsafe_allow_html=True)
+
+# Compact metrics row
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    delta = changes.get(selected_key, 0)
-    if selected_key == "gold":
-        label = f"🥇 {selected_instrument}"
-    elif selected_key == "crude":
-        label = f"🛢️ {selected_instrument}"
-    elif selected_key == "natgas":
-        label = f"🔥 {selected_instrument}"
-    else:
-        label = f"₿ {selected_instrument}"
-    fmt = f"{current_price:,.3f}" if selected_key == "natgas" else f"{current_price:,.2f}"
-    st.metric(label, fmt, f"{delta:+.3f}" if selected_key == "natgas" else f"{delta:+.2f}")
+    st.metric("LAST", fmt_price, f"{fmt_delta}")
 with col2:
-    st.metric("Order Blocks Found", len(order_blocks), "Active zones")
+    st.metric("ORDER BLOCKS", len(order_blocks), "zones")
 with col3:
     conf = agents["decision"]["confidence"]
-    st.metric("System Confidence", f"{conf*100:.0f}%" if conf > 0 else "—", "Full Confluence" if agents["decision"]["has_trade"] else "Waiting")
+    st.metric("CONFLUENCE", f"{conf*100:.0f}%" if conf > 0 else "—", "READY" if agents["decision"]["has_trade"] else "WAIT")
 with col4:
-    ob_status = "✅ Aligned" if agents["orderblock"]["aligned"] else "⏳ Watching"
-    st.metric("Order Block Status", ob_status)
+    st.metric("OB STATUS", "ALIGNED" if agents["orderblock"]["aligned"] else "WATCH")
+with col5:
+    qscore = agents.get("quant_model", {}).get("score", 0)
+    st.metric("QUANT SCORE", f"{qscore:+.2f}")
 
-st.markdown("---")
-
-# ====================== ADVANCED CHART (Yahoo Finance style) ======================
-st.subheader(f"📈 {selected_instrument} — Advanced Chart (Candlestick + Volume + Order Blocks)")
+# ====================== CHART ======================
+st.markdown(f'<div class="bbg-panel-title" style="margin-top:10px;">{selected_symbol} — CANDLESTICK + VOLUME + ORDER BLOCKS</div>', unsafe_allow_html=True)
 
 fig = make_subplots(
     rows=2, cols=1,
@@ -947,10 +1097,10 @@ fig.add_trace(go.Candlestick(
     low=ohlc_df["low"],
     close=ohlc_df["close"],
     name="OHLC",
-    increasing_line_color="#22c55e",
-    decreasing_line_color="#ef4444",
-    increasing_fillcolor="#22c55e",
-    decreasing_fillcolor="#ef4444"
+    increasing_line_color="#00cc55",
+    decreasing_line_color="#ff3333",
+    increasing_fillcolor="#00cc55",
+    decreasing_fillcolor="#ff3333"
 ), row=1, col=1)
 
 # Simple Moving Averages
@@ -971,7 +1121,7 @@ if len(ohlc_df) >= 20:
 
 # Order Block zones as horizontal rectangles / lines
 colors_ob = {"Bullish OB": "rgba(34, 197, 94, 0.25)", "Bearish OB": "rgba(239, 68, 68, 0.25)"}
-line_colors = {"Bullish OB": "#22c55e", "Bearish OB": "#ef4444"}
+line_colors = {"Bullish OB": "#00cc55", "Bearish OB": "#ff3333"}
 
 for ob in order_blocks:
     fig.add_hrect(
@@ -991,7 +1141,7 @@ for ob in order_blocks:
     )
 
 # Volume bars
-colors_vol = ["#22c55e" if c >= o else "#ef4444" for c, o in zip(ohlc_df["close"], ohlc_df["open"])]
+colors_vol = ["#00cc55" if c >= o else "#ff3333" for c, o in zip(ohlc_df["close"], ohlc_df["open"])]
 fig.add_trace(go.Bar(
     x=ohlc_df["time"],
     y=ohlc_df["volume"],
@@ -1002,29 +1152,30 @@ fig.add_trace(go.Bar(
 
 fig.update_layout(
     template="plotly_dark",
-    height=520,
-    margin=dict(l=10, r=10, t=40, b=10),
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(15,23,42,0.85)",
+    height=480,
+    margin=dict(l=8, r=8, t=28, b=8),
+    paper_bgcolor="#000000",
+    plot_bgcolor="#000000",
+    font=dict(family="Roboto Mono, monospace", color="#aaa", size=11),
     xaxis_rangeslider_visible=False,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10, color="#888")),
     hovermode="x unified"
 )
-fig.update_xaxes(showgrid=False, row=1, col=1)
-fig.update_xaxes(showgrid=False, row=2, col=1)
-fig.update_yaxes(showgrid=True, gridcolor="#1e293b", row=1, col=1)
-fig.update_yaxes(showgrid=False, row=2, col=1)
+fig.update_xaxes(showgrid=False, row=1, col=1, color="#444")
+fig.update_xaxes(showgrid=False, row=2, col=1, color="#444")
+fig.update_yaxes(showgrid=True, gridcolor="#1a1a1a", row=1, col=1, color="#666")
+fig.update_yaxes(showgrid=False, row=2, col=1, color="#666")
 
 st.plotly_chart(fig, use_container_width=True)
 
 # ====================== ORDER BLOCK SCANNER PANEL ======================
-st.subheader("🔟 Order Block Scanner — Key Levels")
+st.markdown('<div class="bbg-panel-title">ORDER BLOCK SCANNER — KEY LEVELS</div>', unsafe_allow_html=True)
 
 if order_blocks:
     ob_cols = st.columns(min(4, len(order_blocks)))
     for idx, ob in enumerate(order_blocks):
         with ob_cols[idx % len(ob_cols)]:
-            color = "#22c55e" if "Bullish" in ob["type"] else "#ef4444"
+            color = "#00cc55" if "Bullish" in ob["type"] else "#ff3333"
             st.markdown(f"""
             <div class="ob-card">
                 <div style="color:{color}; font-weight:600;">{ob['type']}</div>
@@ -1043,37 +1194,41 @@ st.markdown(f"**Scanner Signal:** {agents['orderblock']['signal']}")
 st.markdown("---")
 
 # ====================== FINAL DECISION (CONDITIONAL) ======================
-st.subheader("🎯 Final Trade Decision (Agent 9 + Order Block Gate)")
+st.markdown('<div class="bbg-panel-title">TRADE DECISION — INSTITUTIONAL GATE</div>', unsafe_allow_html=True)
 
 decision = agents["decision"]
 
 if decision["has_trade"]:
     st.markdown(f"""
     <div class="decision-box">
-        <h3 style="color:#34d399; margin-top:0;">✅ TRADE SIGNAL — {decision['side']} {decision['instrument']}</h3>
-        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:1rem; margin:1rem 0;">
-            <div><strong>Entry</strong><br><span style="font-size:1.3rem; color:#f1f5f9;">{decision['entry']}</span></div>
-            <div><strong>Stop Loss</strong><br><span style="font-size:1.3rem; color:#f87171;">{decision['stop_loss']}</span></div>
-            <div><strong>Take Profit</strong><br><span style="font-size:1.3rem; color:#34d399;">{decision['take_profit']}</span></div>
-            <div><strong>Size</strong><br><span style="font-size:1.3rem; color:#f1f5f9;">{decision['size']}</span></div>
+        <div style="color:#00cc55; font-size:0.85rem; font-weight:700; letter-spacing:1px; margin-bottom:8px;">
+            TRADE SIGNAL — {decision['side']} {decision['instrument']}
         </div>
-        <p style="color:#a7f3d0;"><strong>Confidence:</strong> {decision['confidence']*100:.0f}% &nbsp;|&nbsp; 
-        <strong>Aligned:</strong> {', '.join(decision['aligned_agents'])}</p>
-        <p style="color:#d1fae5; font-size:0.95rem;">{decision['reasoning']}</p>
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin:8px 0; font-family:'Roboto Mono',monospace;">
+            <div><span style="color:#666; font-size:0.7rem;">ENTRY</span><br><span style="font-size:1.2rem; color:#fff; font-weight:600;">{decision['entry']}</span></div>
+            <div><span style="color:#666; font-size:0.7rem;">STOP</span><br><span style="font-size:1.2rem; color:#ff3333; font-weight:600;">{decision['stop_loss']}</span></div>
+            <div><span style="color:#666; font-size:0.7rem;">TARGET</span><br><span style="font-size:1.2rem; color:#00cc55; font-weight:600;">{decision['take_profit']}</span></div>
+            <div><span style="color:#666; font-size:0.7rem;">SIZE</span><br><span style="font-size:1.2rem; color:#fff; font-weight:600;">{decision['size']}</span></div>
+        </div>
+        <p style="color:#00aa44; font-size:0.8rem; margin:6px 0 0 0;">
+            CONF {decision['confidence']*100:.0f}% &nbsp;|&nbsp; ALIGNED: {', '.join(decision['aligned_agents'])}
+        </p>
+        <p style="color:#888; font-size:0.75rem; margin:4px 0 0 0;">{decision['reasoning']}</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Sound alert for trade
     if enable_sound:
         play_alert_sound("trade")
-        st.success("🔊 Trade alert sound played (pleasant chime)")
 else:
     st.markdown(f"""
     <div class="decision-box-wait">
-        <h3 style="color:#94a3b8; margin-top:0;">⏳ NO TRADE — Waiting for Full Confluence</h3>
-        <p style="color:#cbd5e1;">{decision['reasoning']}</p>
-        <p style="color:#64748b; font-size:0.9rem;">Currently aligned: {', '.join(decision['aligned_agents']) if decision['aligned_agents'] else 'None'}</p>
-        <p style="color:#64748b; font-size:0.85rem;">Requires: Order Block alignment + ≥{min_confluence} supporting agents + Risk approval.</p>
+        <div style="color:#666; font-size:0.85rem; font-weight:700; letter-spacing:1px; margin-bottom:6px;">
+            NO TRADE — AWAITING CONFLUENCE
+        </div>
+        <p style="color:#888; font-size:0.8rem; margin:0;">{decision['reasoning']}</p>
+        <p style="color:#555; font-size:0.75rem; margin:4px 0 0 0;">
+            ALIGNED: {', '.join(decision['aligned_agents']) if decision['aligned_agents'] else 'NONE'}
+            &nbsp;|&nbsp; NEED: OB + ≥{min_confluence} SIGNALS + QUANT
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1082,18 +1237,16 @@ if alert_level > 0 and enable_sound:
     tolerance = current_price * (alert_tolerance / 100)
     if abs(current_price - alert_level) <= tolerance:
         play_alert_sound("level")
-        st.warning(f"🔔 **KEY LEVEL ALERT** — Price {current_price:.2f} is within {alert_tolerance}% of your set level {alert_level:.2f}")
-
-st.markdown("---")
+        st.warning(f"KEY LEVEL HIT — {current_price:.2f} near {alert_level:.2f}")
 
 # ====================== POWERFUL REAL-INDICATOR AGENTS ======================
-st.subheader("🤖 Live Agent Reasoning (Real Indicators)")
+st.markdown('<div class="bbg-panel-title" style="margin-top:12px;">AGENT PANEL — LIVE SIGNALS</div>', unsafe_allow_html=True)
 
 def _signal_color(sig):
     if sig == "BUY":
-        return "#22c55e"
+        return "#00cc55"
     if sig == "SELL":
-        return "#ef4444"
+        return "#ff3333"
     return "#94a3b8"
 
 # ===== Institutional Quant Model (prominent) =====
@@ -1184,7 +1337,7 @@ with r2c3:
     <div class="agent-card">
         <div class="agent-title">{a['name']}</div>
         <p style="color:#e2e8f0; font-size:0.85rem;">{a['analysis']}</p>
-        <p style="color:#60a5fa; font-size:0.85rem;"><b>{a['signal']}</b></p>
+        <p style="color:#ff6600; font-size:0.85rem;"><b>{a['signal']}</b></p>
         <p style="color:#10b981; font-size:0.8rem;">Confidence: {a['confidence']*100:.0f}%</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1203,7 +1356,7 @@ with r3c1:
     """, unsafe_allow_html=True)
     st.markdown("#### 🚨 Upcoming High-Impact Events")
     for event in a["upcoming"]:
-        color = "#ef4444" if event["impact"] == "HIGH" else "#f59e0b"
+        color = "#ff3333" if event["impact"] == "HIGH" else "#f59e0b"
         st.markdown(f"""
         <div class="news-alert">
             <strong style="color:{color};">{event['impact']}</strong> — {event['event']}<br>
@@ -1213,7 +1366,7 @@ with r3c1:
 
 with r3c2:
     a = agents["risk"]
-    status_color = "#10b981" if a["approved"] else "#ef4444"
+    status_color = "#10b981" if a["approved"] else "#ff3333"
     st.markdown(f"""
     <div class="agent-card">
         <div class="agent-title">{a['name']}</div>
