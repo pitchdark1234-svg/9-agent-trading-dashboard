@@ -881,7 +881,7 @@ with main_col:
                 col=1,
             )
 
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 with side_col:
     # Key levels
